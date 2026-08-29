@@ -1,16 +1,18 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.2.0",
-  "description": "Windows Minecraft Java launcher with isolated instances, Modrinth search/install/update, and easy content management",
+  "version": "0.3.0",
+  "description": "Windows Minecraft Java launcher with isolated instances, Modrinth in-app installs, per-instance settings, and in-app updates",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win nsis",
-    "dist:portable": "electron-builder --win portable"
+    "prepare:build": "node scripts/write-build-info.js",
+    "dist:win": "npm run prepare:build && electron-builder --win nsis",
+    "dist:portable": "npm run prepare:build && electron-builder --win portable"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "minecraft-java-core": "4.2.9"
   },
   "devDependencies": {
@@ -34,13 +36,17 @@
       "buildResources": "build",
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "icon": "build/icon.png",
