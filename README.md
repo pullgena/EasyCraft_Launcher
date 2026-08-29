@@ -29,3 +29,4 @@ GitHub Actions에서 `Build Windows EXE` 워크플로를 실행하거나 `BUILD_
 - GitHub tag: `v0.3.3`
 
 저장소는 일반 사용자 자동 업데이트를 위해 Public 저장소로 사용하는 것을 권장합니다.
+Windows용 Minecraft Java 런처입니다. 인스턴스별 설정, Modrinth 검색/설치/업데이트, Microsoft 로그인, 자동 업데이트를 지원합니다.
