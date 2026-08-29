@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   deleteInstance: id => ipcRenderer.invoke('delete-instance', id),
   updateInstance: (id, patch) => ipcRenderer.invoke('update-instance', id, patch),
   updateInstanceSettings: (id, patch) => ipcRenderer.invoke('update-instance-settings', id, patch),
+  instanceCapabilities: id => ipcRenderer.invoke('instance-capabilities', id),
   pickJava: () => ipcRenderer.invoke('pick-java'),
 
   pickContent: (id, type) => ipcRenderer.invoke('pick-content', id, type),
@@ -22,7 +23,8 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   openInstanceFolder: id => ipcRenderer.invoke('open-instance-folder', id),
 
   modrinthSearch: (id, type, query) => ipcRenderer.invoke('modrinth-search', id, type, query),
-  modrinthInstall: (id, projectId) => ipcRenderer.invoke('modrinth-install', id, projectId),
+  modrinthInstallPlan: (id, projectId) => ipcRenderer.invoke('modrinth-install-plan', id, projectId),
+  modrinthInstall: (id, projectId, allowDependencies = false) => ipcRenderer.invoke('modrinth-install', id, projectId, allowDependencies),
   modrinthUninstall: (id, projectId) => ipcRenderer.invoke('modrinth-uninstall', id, projectId),
   modrinthCheckUpdates: id => ipcRenderer.invoke('modrinth-check-updates', id),
   modrinthUpdate: (id, projectId) => ipcRenderer.invoke('modrinth-update', id, projectId),

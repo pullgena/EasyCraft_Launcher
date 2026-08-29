@@ -40,7 +40,7 @@
       <section class="view active" id="view-play">
         <div class="hero card">
           <div class="hero-copy">
-            <div class="eyebrow">SELECTED INSTANCE</div>
+            <div class="eyebrow">선택한 인스턴스</div>
             <h2 id="heroInstanceName">인스턴스를 만들어 주세요</h2>
             <p id="heroMeta">Minecraft 버전과 모드 로더를 고른 뒤 실행할 수 있습니다.</p>
             <div class="hero-actions">
@@ -55,9 +55,9 @@
         <div class="card quick-card wide-card">
           <div class="card-heading"><div><h3>빠른 콘텐츠 추가</h3><p>다운로드 사이트로 갈 필요 없이 Modrinth에서 검색해서 현재 인스턴스에 바로 설치합니다.</p></div></div>
           <div class="quick-buttons">
-            <button class="quick-add" data-type="mods"><b>MOD</b><span>Modrinth에서 모드 찾기</span></button>
-            <button class="quick-add" data-type="resourcepacks"><b>RP</b><span>리소스팩 검색</span></button>
-            <button class="quick-add" data-type="shaderpacks"><b>SH</b><span>셰이더 검색</span></button>
+            <button class="quick-add" data-type="mods"><b>MOD</b><span>모드 찾기</span><small>현재 버전에 맞춰 설치</small></button>
+            <button class="quick-add" data-type="resourcepacks"><b>RP</b><span>리소스팩 찾기</span><small>클릭 한 번으로 적용</small></button>
+            <button class="quick-add hidden" id="quickShaderBtn" data-type="shaderpacks"><b>SH</b><span>셰이더 찾기</span><small>Iris가 설치된 인스턴스</small></button>
           </div>
         </div>
       </section>
@@ -76,13 +76,13 @@
           <div class="toolbar-actions"><button class="secondary" id="checkUpdatesBtn">업데이트 확인</button><button class="secondary" id="openContentFolderBtn">폴더 열기</button></div>
         </div>
         <div class="content-tabs">
-          <button class="content-tab active" data-type="mods">Mods</button>
-          <button class="content-tab" data-type="resourcepacks">Resource Packs</button>
-          <button class="content-tab" data-type="shaderpacks">Shaders</button>
+          <button class="content-tab active" data-type="mods">모드</button>
+          <button class="content-tab" data-type="resourcepacks">리소스팩</button>
+          <button class="content-tab hidden" id="shaderTabBtn" data-type="shaderpacks">셰이더</button>
         </div>
         <div class="market-card card">
           <div class="market-search-row"><input class="text-input" id="modrinthSearchInput" placeholder="Modrinth에서 검색... 예: Sodium, Iris, JEI" /><button class="primary" id="modrinthSearchBtn">검색</button></div>
-          <div class="market-note" id="marketNote">현재 인스턴스의 Minecraft 버전과 로더에 맞는 콘텐츠만 검색합니다. 설치하면 실제 인스턴스의 mods/resourcepacks/shaderpacks 폴더에 저장됩니다.</div>
+          <div class="market-note" id="marketNote">현재 인스턴스와 호환되는 콘텐츠만 보여줍니다. 설치 버튼을 누르면 필요한 파일이 인스턴스에 바로 적용됩니다.</div>
           <div class="update-banner hidden" id="updateBanner"><span id="updateText"></span><button class="primary" id="updateAllBtn">모두 업데이트</button></div>
           <div class="market-grid" id="modrinthResults"><div class="empty-state compact">검색어를 입력하거나 검색 버튼을 눌러 인기 콘텐츠를 확인하세요.</div></div>
         </div>
@@ -137,13 +137,13 @@
       <span class="status-dot" id="overlayStatusDot"></span>
     </div>
     <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
-    <div class="log-box overlay-log" id="logBox">Minecraft 실행 준비 중…</div>
+    <button class="danger ghost overlay-stop" id="overlayStopBtn" type="button">■ 중지</button>
   </div>
 
   <div class="modal-backdrop hidden" id="instanceModal">
     <div class="modal">
       <div class="modal-head"><div><h2>새 인스턴스</h2><p>원하는 버전과 모드 로더를 선택하세요.</p></div><button class="icon-btn" id="closeModalBtn">×</button></div>
-      <label>이름</label><input class="text-input" id="instanceNameInput" placeholder="예: Fabric 1.21 모드팩" maxlength="40" />
+      <label>이름</label><input class="text-input" id="instanceNameInput" lang="ko" inputmode="text" autocomplete="off" spellcheck="false" placeholder="예: 친구랑 하는 모드팩" maxlength="40" />
       <label>Minecraft 버전</label><select class="text-input" id="versionSelect"><option value="latest_release">최신 릴리스</option></select>
       <label>모드 로더</label>
       <div class="loader-options" id="loaderOptions">
@@ -157,10 +157,10 @@
     <div class="modal settings-modal">
       <div class="modal-head"><div><h2>인스턴스 설정</h2><p id="instanceSettingsHint">이 인스턴스에만 적용됩니다.</p></div><button class="icon-btn" id="closeInstanceSettingsBtn">×</button></div>
       <div class="form-grid two-col">
-        <div><label>이름</label><input class="text-input" id="editInstanceName" maxlength="40" /></div>
+        <div><label>이름</label><input class="text-input" id="editInstanceName" lang="ko" inputmode="text" autocomplete="off" spellcheck="false" maxlength="40" /></div>
         <div><label>Minecraft 버전</label><select class="text-input" id="editInstanceVersion"></select></div>
         <div><label>모드 로더</label><select class="text-input" id="editInstanceLoader"><option value="vanilla">Vanilla</option><option value="fabric">Fabric</option><option value="forge">Forge</option><option value="neoforge">NeoForge</option><option value="quilt">Quilt</option></select></div>
-        <div><label>자동 콘텐츠 업데이트</label><label class="check-row"><input type="checkbox" id="editAutoUpdateContent" /> 실행 전에 Modrinth 업데이트 확인</label></div>
+        <div><label>자동 콘텐츠 업데이트</label><label class="check-row"><input type="checkbox" id="editAutoUpdateContent" /> 백그라운드에서 콘텐츠 업데이트 확인</label></div>
         <div><label>최소 RAM (GB)</label><input class="text-input" type="number" min="1" max="32" id="editMinRam" /></div>
         <div><label>최대 RAM (GB)</label><input class="text-input" type="number" min="1" max="64" id="editMaxRam" /></div>
         <div><label>창 너비</label><input class="text-input" type="number" min="640" max="7680" id="editWidth" /></div>

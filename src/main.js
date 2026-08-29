@@ -10,7 +10,7 @@ let mainWindow;
 let currentAccount = null;
 let activeLauncher = null;
 
-const APP_UA = 'EasyCraftLauncher/0.3.2 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.3.3 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -23,6 +23,9 @@ function configPath() { return path.join(dataDir(), 'config.json'); }
 function accountPath() { return path.join(dataDir(), 'account.json'); }
 function instancesDir() { return path.join(dataDir(), 'instances'); }
 function safeId(value) { return String(value || '').replace(/[^a-zA-Z0-9_-]/g, ''); }
+function cleanInstanceName(value) {
+  return Array.from(String(value || '').normalize('NFC').replace(/[\u0000-\u001F\u007F]/g, '').trim()).slice(0, 40).join('');
+}
 function instanceDir(id) { return path.join(instancesDir(), safeId(id)); }
 function gameDir(id) { return path.join(instanceDir(id), 'game'); }
 function registryPath(id) { return path.join(instanceDir(id), 'installed-modrinth.json'); }
@@ -215,7 +218,7 @@ ipcMain.handle('logout', async () => {
 });
 
 ipcMain.handle('create-instance', async (_event, input) => {
-  const name = String(input?.name || '').trim().slice(0, 40);
+  const name = cleanInstanceName(input?.name);
   const version = String(input?.version || 'latest_release').trim();
   const loader = ['vanilla', 'fabric', 'forge', 'neoforge', 'quilt'].includes(input?.loader) ? input.loader : 'vanilla';
   if (!name) return { ok: false, error: '인스턴스 이름을 입력해 주세요.' };
@@ -248,7 +251,7 @@ ipcMain.handle('update-instance', async (_event, id, patch) => {
   const config = await readConfig();
   const instance = config.instances.find(i => i.id === id);
   if (!instance) return { ok: false, error: '인스턴스를 찾을 수 없습니다.' };
-  if (patch?.name) instance.name = String(patch.name).trim().slice(0, 40) || instance.name;
+  if (patch?.name !== undefined) instance.name = cleanInstanceName(patch.name) || instance.name;
   if (patch?.version) instance.version = String(patch.version).trim();
   if (['vanilla', 'fabric', 'forge', 'neoforge', 'quilt'].includes(patch?.loader)) instance.loader = patch.loader;
   await writeConfig(config);
@@ -261,7 +264,7 @@ ipcMain.handle('update-instance-settings', async (_event, id, patch) => {
   if (activeLauncher?.instanceId === id) return { ok: false, error: '게임 실행 중에는 이 인스턴스 설정을 변경할 수 없습니다.' };
 
   const instance = normalizeInstance(config.instances[index], config.memory);
-  if (patch?.name) instance.name = String(patch.name).trim().slice(0, 40) || instance.name;
+  if (patch?.name !== undefined) instance.name = cleanInstanceName(patch.name) || instance.name;
   if (patch?.version) instance.version = String(patch.version).trim();
   if (['vanilla', 'fabric', 'forge', 'neoforge', 'quilt'].includes(patch?.loader)) instance.loader = patch.loader;
 
@@ -430,6 +433,28 @@ async function recordFileExists(id, rec) {
   return false;
 }
 
+async function getInstanceCapabilities(id) {
+  const modsFolder = targetFolder(id, 'mods');
+  await fsp.mkdir(modsFolder, { recursive: true });
+  const registry = await readRegistry(id);
+  let irisInstalled = false;
+  for (const rec of registry) {
+    const looksLikeIris = rec.projectType === 'mod' && (String(rec.slug || '').toLowerCase() === 'iris' || /^iris(?: shaders)?$/i.test(String(rec.title || '').trim()));
+    if (!looksLikeIris) continue;
+    const enabledPath = path.join(gameDir(id), rec.folder, rec.fileName);
+    try { await fsp.access(enabledPath); irisInstalled = true; break; } catch {}
+  }
+  if (!irisInstalled) {
+    const names = await fsp.readdir(modsFolder).catch(() => []);
+    irisInstalled = names.some(name => !name.endsWith('.disabled') && /^iris(?:[-_.+].*)?\.jar$/i.test(name));
+  }
+  return { irisInstalled };
+}
+ipcMain.handle('instance-capabilities', async (_event, id) => {
+  try { return { ok: true, ...(await getInstanceCapabilities(id)) }; }
+  catch (error) { return { ok: false, irisInstalled: false, error: error.message }; }
+});
+
 async function repairManagedContent(id) {
   await ensureInstanceFolders(id);
   const registry = await readRegistry(id);
@@ -530,6 +555,56 @@ function collisionSafeFileName(registry, projectId, filename) {
   const ext = path.extname(filename), base = path.basename(filename, ext);
   return `${base}-${projectId}${ext}`;
 }
+async function resolveInstallCandidate(instance, projectId, specificVersionId = null) {
+  const project = await getProject(projectId);
+  const projectType = project.project_type;
+  if (projectType === 'mod' && instance.loader === 'vanilla') throw new Error('Vanilla 인스턴스에는 모드를 설치할 수 없습니다.');
+  let version;
+  if (specificVersionId) {
+    version = await getVersion(specificVersionId);
+    if (projectType === 'mod' && !(version.loaders || []).includes(instance.loader)) throw new Error(`${project.title}: ${instance.loader}용 버전이 아닙니다.`);
+    if (instance.version && !(version.game_versions || []).includes(instance.version)) throw new Error(`${project.title}: Minecraft ${instance.version}와 호환되지 않습니다.`);
+  } else {
+    const versions = await compatibleVersions(instance, projectId, projectType);
+    version = versions[0];
+    if (!version) throw new Error(`${project.title}: 현재 Minecraft ${instance.version} / ${instance.loader}에 맞는 버전이 없습니다.`);
+  }
+  return { project, version };
+}
+async function collectRequiredDependencies(id, instance, projectId) {
+  const registry = await readRegistry(id);
+  const installed = new Set();
+  for (const rec of registry) if (await recordFileExists(id, rec)) installed.add(rec.projectId);
+  const result = [];
+  const seen = new Set();
+  async function walk(pid, specificVersionId = null) {
+    if (!pid || seen.has(pid)) return;
+    seen.add(pid);
+    const { project, version } = await resolveInstallCandidate(instance, pid, specificVersionId);
+    for (const dep of version.dependencies || []) {
+      if (dep.dependency_type !== 'required') continue;
+      let depProjectId = dep.project_id;
+      let depVersionId = dep.version_id || null;
+      if (!depProjectId && depVersionId) depProjectId = (await getVersion(depVersionId)).project_id;
+      if (!depProjectId) continue;
+      if (!installed.has(depProjectId)) {
+        const candidate = await resolveInstallCandidate(instance, depProjectId, depVersionId);
+        if (!result.some(x => x.projectId === depProjectId)) result.push({ projectId: depProjectId, title: candidate.project.title, versionId: candidate.version.id });
+      }
+      await walk(depProjectId, depVersionId);
+    }
+  }
+  const root = await resolveInstallCandidate(instance, projectId);
+  await walk(projectId);
+  return { rootTitle: root.project.title, dependencies: result };
+}
+ipcMain.handle('modrinth-install-plan', async (_event, id, projectId) => {
+  try {
+    const { instance } = await getInstance(id); if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
+    return { ok: true, ...(await collectRequiredDependencies(id, instance, projectId)) };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
+
 async function installProjectInternal(id, instance, projectId, options = {}, seen = new Set()) {
   if (seen.has(projectId)) return;
   seen.add(projectId);
@@ -625,10 +700,14 @@ async function installProjectInternal(id, instance, projectId, options = {}, see
   }
   return { project, version };
 }
-ipcMain.handle('modrinth-install', async (_event, id, projectId) => {
+ipcMain.handle('modrinth-install', async (_event, id, projectId, allowDependencies = false) => {
   try {
     const { instance } = await getInstance(id); if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
     await ensureInstanceFolders(id);
+    const plan = await collectRequiredDependencies(id, instance, projectId);
+    if (plan.dependencies.length && !allowDependencies) {
+      return { ok: false, needsConfirmation: true, title: plan.rootTitle, dependencies: plan.dependencies };
+    }
     const result = await installProjectInternal(id, instance, projectId, { rootProjectId: projectId, autoDependency: false });
     send('content-progress', { projectId, text: `${result.project.title} 설치 완료` });
     return { ok: true, title: result.project.title, version: result.version.version_number };
@@ -693,6 +772,17 @@ ipcMain.handle('modrinth-update-all', async (_event, id) => {
   } catch (error) { return { ok: false, error: error.message }; }
 });
 
+function launchReadyMarker(id) { return path.join(instanceDir(id), 'launch-ready.json'); }
+async function hasLaunchReadyMarker(id, instance) {
+  try {
+    const m = JSON.parse(await fsp.readFile(launchReadyMarker(id), 'utf8'));
+    return m.version === instance.version && m.loader === instance.loader;
+  } catch { return false; }
+}
+async function writeLaunchReadyMarker(id, instance) {
+  await fsp.writeFile(launchReadyMarker(id), JSON.stringify({ version: instance.version, loader: instance.loader, at: new Date().toISOString() }), 'utf8').catch(() => {});
+}
+
 async function appendLauncherLog(id, text) {
   try {
     await fsp.mkdir(logsDir(id), { recursive: true });
@@ -718,48 +808,57 @@ ipcMain.handle('get-launch-state', async () => {
 });
 
 ipcMain.handle('stop-game', async (_event, id) => {
-  if (!activeLauncher || activeLauncher.instanceId !== id) return { ok: false, error: '이 인스턴스에서 실행 중인 Minecraft가 없습니다.' };
-  if (activeLauncher.state !== 'running') return { ok: false, error: 'Minecraft가 아직 실행 준비 중입니다.' };
+  if (!activeLauncher || activeLauncher.instanceId !== id) return { ok: false, error: '이 인스턴스에서 실행 또는 준비 중인 Minecraft가 없습니다.' };
+  activeLauncher.cancelRequested = true;
   emitLaunchState('stopping', id);
   const needle = safeId(id);
-  try {
+  const killJava = async () => {
     if (process.platform === 'win32') {
       const psNeedle = needle.replace(/'/g, "''");
-      const script = `$needle='${psNeedle}'; $p=Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'java.exe' -or $_.Name -eq 'javaw.exe') -and $_.CommandLine -and $_.CommandLine.Contains($needle) }; if(-not $p){exit 3}; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
-      await new Promise((resolve, reject) => execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true }, (err) => err ? reject(err) : resolve()));
+      const rootNeedle = gameDir(id).replace(/'/g, "''");
+      const script = `$idneedle='${psNeedle}'; $rootneedle='${rootNeedle}'; $p=Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'java.exe' -or $_.Name -eq 'javaw.exe') -and $_.CommandLine -and ($_.CommandLine.Contains($idneedle) -or $_.CommandLine.Contains($rootneedle)) }; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      await new Promise(resolve => execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true }, () => resolve()));
     } else {
-      await new Promise((resolve, reject) => execFile('pkill', ['-f', needle], err => err ? reject(err) : resolve()));
+      await new Promise(resolve => execFile('pkill', ['-f', gameDir(id)], () => resolve()));
     }
-    return { ok: true };
-  } catch (error) {
-    emitLaunchState('running', id);
-    return { ok: false, error: '게임 프로세스를 찾거나 종료하지 못했습니다. Minecraft 창에서 직접 종료해 주세요.' };
-  }
+  };
+  await killJava();
+  // 준비 단계에는 minecraft-java-core가 즉시 중단 API를 제공하지 않으므로 취소 플래그를 세우고,
+  // Java 프로세스가 생성되는 즉시 다시 강제 종료한다.
+  setTimeout(() => killJava().catch(() => {}), 700).unref?.();
+  setTimeout(() => killJava().catch(() => {}), 1800).unref?.();
+  return { ok: true, preparingCancelled: activeLauncher.state !== 'running' };
+});
+
+ipcMain.on('__easycraft-cancel-spawned-java', async (_event, id) => {
+  if (!id) return;
+  try {
+    const rootNeedle = gameDir(id).replace(/'/g, "''");
+    if (process.platform === 'win32') {
+      const script = `$rootneedle='${rootNeedle}'; Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'java.exe' -or $_.Name -eq 'javaw.exe') -and $_.CommandLine -and $_.CommandLine.Contains($rootneedle) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+      execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true }, () => {});
+    }
+  } catch {}
 });
 
 ipcMain.handle('launch-game', async (_event, id) => {
   if (activeLauncher) return { ok: false, error: '이미 Minecraft를 실행하고 있습니다.' };
-  const summary = await loadSavedAccount();
+  let summary = accountSummary(currentAccount);
+  if (!summary || !currentAccount) summary = await loadSavedAccount();
   if (!summary || !currentAccount) return { ok: false, needLogin: true, error: '먼저 Microsoft 계정으로 로그인해 주세요.' };
   const { config, instance: rawInstance } = await getInstance(id);
   if (!rawInstance) return { ok: false, error: '실행할 인스턴스를 찾을 수 없습니다.' };
   const instance = normalizeInstance(rawInstance, config.memory);
   await ensureInstanceFolders(id);
 
-  if (instance.settings.autoUpdateContent) {
-    try {
-      send('launch-progress', { percent: 1, text: 'Modrinth 콘텐츠 업데이트 확인 중…' });
-      const count = await updateAllManagedContent(id, instance);
-      if (count) send('content-progress', { text: `실행 전에 ${count}개 콘텐츠를 자동 업데이트했습니다.` });
-    } catch (error) {
-      await appendLauncherLog(id, `AUTO CONTENT UPDATE ERROR ${error.message || error}`);
-    }
-  }
+  // 빠른 실행: 매번 네트워크 업데이트 검사를 기다리지 않습니다.
+  // 누락된 파일 복구는 실제 누락 파일이 있을 때만 네트워크를 사용합니다.
   await repairManagedContent(id);
 
   const root = gameDir(id);
+  const quickLaunch = await hasLaunchReadyMarker(id, instance);
   const launcher = new Launch();
-  activeLauncher = { launcher, instanceId: id, state: 'preparing' };
+  activeLauncher = { launcher, instanceId: id, state: 'preparing', cancelRequested: false };
   emitLaunchState('preparing', id, { name: instance.name });
   const loaderEnabled = instance.loader !== 'vanilla';
   const settings = instance.settings;
@@ -768,7 +867,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
     authenticator: currentAccount,
     version: instance.version || 'latest_release',
     detached: false,
-    verify: true,
+    verify: !quickLaunch,
     timeout: 30000,
     loader: {
       enable: loaderEnabled,
@@ -791,10 +890,15 @@ ipcMain.handle('launch-game', async (_event, id) => {
     const text = String(line || '').trim();
     if (!text) return;
     if (text.startsWith('Launching with arguments')) {
+      if (activeLauncher?.instanceId === id && activeLauncher.cancelRequested) {
+        // stop-game이 준비 중 눌렸다면 Java가 뜨는 즉시 강제 종료 요청을 다시 실행한다.
+        ipcMain.emit('__easycraft-cancel-spawned-java', null, id);
+        return;
+      }
       emitLaunchState('running', id, { name: instance.name });
       send('launch-progress', { percent: 100, text: 'Minecraft 실행 중' });
+      writeLaunchReadyMarker(id, instance);
     }
-    send('game-log', text.slice(-1600));
     appendLauncherLog(id, text);
   };
   launcher.on('progress', (progress, total) => {
@@ -814,9 +918,20 @@ ipcMain.handle('launch-game', async (_event, id) => {
     activeLauncher = null;
   });
   launcher.on('close', () => {
+    const wasCancelled = !!activeLauncher?.cancelRequested;
     send('launch-closed', { instanceId: id });
     emitLaunchState('idle', id);
     activeLauncher = null;
+    // 게임 종료 후에만 콘텐츠 업데이트를 백그라운드에서 확인하여 다음 실행에 적용한다.
+    // 실행 직전 네트워크 대기를 없애고, 실행 중인 JAR 파일을 교체하는 위험도 피한다.
+    if (!wasCancelled && instance.settings.autoUpdateContent) {
+      setTimeout(async () => {
+        try {
+          const count = await updateAllManagedContent(id, instance);
+          if (count) send('content-progress', { text: `${count}개 콘텐츠 업데이트 완료 · 다음 실행에 적용됩니다.` });
+        } catch (error) { await appendLauncherLog(id, `POST-GAME CONTENT UPDATE ERROR ${error.message || error}`); }
+      }, 1000).unref?.();
+    }
   });
 
   try {

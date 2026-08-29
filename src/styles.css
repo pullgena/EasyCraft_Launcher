@@ -34,3 +34,23 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .launcher-update-overlay{position:fixed;right:22px;top:22px;width:360px;z-index:38;background:rgba(18,24,20,.97);backdrop-filter:blur(14px);border:1px solid #3b4d42;border-radius:14px;padding:15px;box-shadow:0 24px 70px rgba(0,0,0,.48);animation:overlayIn .18s ease-out}
 .launcher-update-overlay-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.launcher-update-overlay-head strong,.launcher-update-overlay-head small{display:block}.launcher-update-overlay-head strong{font-size:13px}.launcher-update-overlay-head small{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.45}.launcher-update-overlay .progress-wrap{margin:13px 0 0}.launcher-update-overlay .overlay-update-action{width:100%;margin-top:10px}.overlay-close{border:0;background:transparent;color:#87948b;font-size:19px;line-height:1;cursor:pointer;padding:1px 4px}.overlay-close:hover{color:#e5eee7}.launch-overlay.updater-visible{top:160px}
 @media(max-width:900px){.launcher-update-overlay{right:14px;top:14px;width:min(360px,calc(100vw - 28px))}.launch-overlay.updater-visible{top:152px}}
+
+/* EasyCraft 0.3.3 usability pass */
+body,button,input,select,textarea{font-family:"Segoe UI","Malgun Gothic","맑은 고딕","Noto Sans KR",sans-serif}
+.hero .eyebrow{letter-spacing:.04em;text-transform:none;color:#8ca598;font-weight:700}
+.quick-buttons{gap:10px}
+.quick-add{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;text-align:left;min-height:74px;padding:14px 16px}
+.quick-add b{grid-row:1/3;display:grid;place-items:center;min-width:42px;height:42px;border-radius:10px;background:#1a2a20;color:#a7e5ba}
+.quick-add span{font-weight:750;color:#e6efe8}
+.quick-add small{color:#7f8e84;font-size:10px;margin-top:2px}
+.content-tabs{gap:6px;padding:5px;background:#101612;border:1px solid var(--line);border-radius:12px;width:max-content;max-width:100%;margin-bottom:12px}
+.content-tab{border-radius:8px;padding:9px 15px}
+.content-tab.active{background:#263a2e;color:#c9f2d6}
+.instance-card h3{font-family:"Segoe UI","Malgun Gothic","맑은 고딕",sans-serif;word-break:break-word;white-space:normal;line-height:1.35;min-height:1.35em}
+#instanceNameInput,#editInstanceName{font-family:"Segoe UI","Malgun Gothic","맑은 고딕",sans-serif;ime-mode:active}
+.launch-overlay{width:330px}
+.launch-overlay .progress-wrap{margin-bottom:12px}
+.overlay-stop{width:100%;margin-top:2px;min-height:38px}
+.market-note{background:#111914;border-radius:8px;padding:9px 10px;color:#8fa096}
+.install-btn{min-width:64px}
+@media(max-width:720px){.content-tabs{width:100%}.content-tab{flex:1}.quick-buttons{grid-template-columns:1fr}}

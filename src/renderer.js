@@ -11,7 +11,8 @@ const state = {
   updates: new Map(),
   searchBusy: false,
   settingsInstanceId: null,
-  launcherUpdate: { state: 'idle', percent: 0 }
+  launcherUpdate: { state: 'idle', percent: 0 },
+  capabilities: { irisInstalled: false }
 };
 
 const $ = s => document.querySelector(s);
@@ -47,13 +48,7 @@ function setStatus(text, percent = null) {
   $('#statusText').textContent = text;
   if (percent !== null) $('#progressBar').style.width = `${Math.max(0, Math.min(100, Number(percent) || 0))}%`;
 }
-function appendLog(line) {
-  const box = $('#logBox');
-  const text = String(line || '').trim();
-  if (!text) return;
-  box.textContent = `${box.textContent === 'Minecraft 실행 준비 중…' ? '' : `${box.textContent}\n`}${text}`.slice(-9000);
-  box.scrollTop = box.scrollHeight;
-}
+function appendLog() {}
 function formatDownloads(n) {
   n = Number(n) || 0;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
@@ -95,8 +90,9 @@ function applyLaunchButton() {
     return;
   }
   if (state.launchState === 'preparing') {
-    btn.disabled = true;
-    btn.textContent = '… 준비 중';
+    btn.disabled = false;
+    btn.textContent = '■ 준비 중지';
+    btn.classList.add('stop-mode');
   } else if (state.launchState === 'running') {
     btn.disabled = false;
     btn.textContent = '■ 게임 종료';
@@ -136,6 +132,11 @@ function applyLaunchState(payload = {}) {
     $('#statusText').textContent = payload.error ? '실행 오류' : '게임 종료';
     scheduleHideLaunchOverlay(payload.error ? 6500 : 2200);
   }
+  const overlayStop = $('#overlayStopBtn');
+  const canStop = ['preparing', 'running'].includes(state.launchState);
+  overlayStop.classList.toggle('hidden', !canStop && state.launchState !== 'stopping');
+  overlayStop.disabled = state.launchState === 'stopping';
+  overlayStop.textContent = state.launchState === 'preparing' ? '■ 준비 강제 중지' : state.launchState === 'running' ? '■ 게임 종료' : '■ 종료 중…';
   applyLaunchButton();
   renderInstances();
 }
@@ -158,7 +159,23 @@ function renderSelected() {
   $('#updateBanner').classList.add('hidden');
   applyLaunchButton();
   renderInstances();
-  renderContent();
+  refreshCapabilities().then(() => renderContent());
+}
+async function refreshCapabilities() {
+  const inst = currentInstance();
+  state.capabilities = { irisInstalled: false };
+  if (inst) {
+    const r = await api.instanceCapabilities(inst.id);
+    if (r?.ok) state.capabilities = { irisInstalled: !!r.irisInstalled };
+  }
+  const showShaders = !!state.capabilities.irisInstalled;
+  $('#shaderTabBtn').classList.toggle('hidden', !showShaders);
+  $('#quickShaderBtn').classList.toggle('hidden', !showShaders);
+  if (!showShaders && state.contentType === 'shaderpacks') {
+    state.contentType = 'mods';
+    $$('.content-tab').forEach(x => x.classList.toggle('active', x.dataset.type === 'mods'));
+    contentCopy();
+  }
 }
 function renderInstances() {
   const grid = $('#instanceGrid');
@@ -230,14 +247,14 @@ async function renderContent() {
         ${update && !item.autoDependency ? '<button class="update-one">업데이트</button>' : '<span></span>'}
         <button class="toggle ${item.enabled ? 'on' : ''}" title="켜기/끄기"></button>
         <button class="delete-file" title="${item.autoDependency ? '상위 모드를 삭제하면 자동으로 같이 정리됩니다.' : '삭제'}" ${item.autoDependency ? 'disabled' : ''}>×</button>`;
-      row.querySelector('.toggle').addEventListener('click', async () => { await api.toggleContent(inst.id, state.contentType, item.name); renderContent(); });
+      row.querySelector('.toggle').addEventListener('click', async () => { await api.toggleContent(inst.id, state.contentType, item.name); await refreshCapabilities(); renderContent(); });
       row.querySelector('.delete-file')?.addEventListener('click', async () => {
         if (item.autoDependency) { toast('이 파일은 다른 모드의 필수 의존성입니다.', true); return; }
         const msg = item.managed ? `${title}을(를) 삭제할까요?\n자동 설치된 불필요한 의존성도 같이 정리됩니다.` : `${item.displayName} 파일을 삭제할까요?`;
         if (!confirm(msg)) return;
         const r = await api.deleteContent(inst.id, state.contentType, item.name);
         if (!r.ok) toast(r.error || '삭제 실패', true); else toast(`${title} 삭제 완료`);
-        await renderContent(); await refreshSearchInstalledFlags();
+        await refreshCapabilities(); await renderContent(); await refreshSearchInstalledFlags();
       });
       row.querySelector('.update-one')?.addEventListener('click', async () => {
         const btn = row.querySelector('.update-one');
@@ -279,6 +296,10 @@ function switchView(view) {
   if (view === 'content' && currentInstance()) searchModrinth();
 }
 function selectContentType(type, doSearch = true) {
+  if (type === 'shaderpacks' && !state.capabilities.irisInstalled) {
+    toast('셰이더는 Iris 모드가 설치되고 활성화된 인스턴스에서 사용할 수 있습니다.', true);
+    return;
+  }
   state.contentType = type;
   $$('.content-tab').forEach(x => x.classList.toggle('active', x.dataset.type === type));
   contentCopy(); renderContent();
@@ -335,6 +356,7 @@ async function addPicked(type = state.contentType) {
   const r = await api.pickContent(inst.id, type);
   if (r.added?.length) toast(`${r.added.length}개 파일을 추가했습니다.`);
   if (r.skipped?.length) toast(`지원하지 않는 파일 ${r.skipped.length}개는 건너뛰었습니다.`, true);
+  await refreshCapabilities();
   if (type === state.contentType) renderContent();
 }
 async function searchModrinth() {
@@ -358,12 +380,26 @@ function renderSearchResults(results) {
     const btn = card.querySelector('.install-btn');
     if (!item.installed) btn.addEventListener('click', async () => {
       const inst = currentInstance(); if (!inst) return;
-      btn.disabled = true; btn.textContent = '설치 중…';
-      const r = await api.modrinthInstall(inst.id, item.projectId);
+      btn.disabled = true; btn.textContent = '확인 중…';
+      const plan = await api.modrinthInstallPlan(inst.id, item.projectId);
+      if (!plan.ok) { btn.disabled = false; btn.textContent = '설치'; toast(plan.error || '설치 정보를 확인하지 못했습니다.', true); return; }
+      let allowDependencies = false;
+      if (plan.dependencies?.length) {
+        const names = plan.dependencies.map(d => d.title).join(', ');
+        const ok = confirm(`${plan.rootTitle || item.title}를 설치하려면 ${names}가 필요해요. 설치할까요?`);
+        if (!ok) { btn.disabled = false; btn.textContent = '설치'; return; }
+        allowDependencies = true;
+      }
+      btn.textContent = '설치 중…';
+      const r = await api.modrinthInstall(inst.id, item.projectId, allowDependencies);
       if (r.ok) {
-        btn.textContent = '실제 설치됨'; item.installed = true;
+        btn.textContent = '설치됨'; item.installed = true;
         toast(`${r.title || item.title} ${r.version ? `(${r.version}) ` : ''}설치 완료`);
+        await refreshCapabilities();
         await renderContent();
+      } else if (r.needsConfirmation) {
+        btn.disabled = false; btn.textContent = '설치';
+        toast('필수 모드 설치 확인이 필요합니다.', true);
       } else { btn.disabled = false; btn.textContent = '설치'; toast(r.error || '설치 실패', true); }
     });
     box.appendChild(card);
@@ -388,14 +424,15 @@ async function checkUpdates(showNoUpdateToast = true) {
 async function launchOrStop() {
   const inst = currentInstance();
   if (!inst) { toast('실행할 인스턴스가 없습니다.', true); return; }
-  if (state.launchState === 'running' && state.activeInstanceId === inst.id) {
+  if (state.activeInstanceId === inst.id && ['preparing', 'running'].includes(state.launchState)) {
     const r = await api.stopGame(inst.id);
-    if (!r.ok) toast(r.error || '게임 종료 실패', true);
+    if (!r.ok) toast(r.error || '중지 실패', true);
+    else toast(state.launchState === 'preparing' ? 'Minecraft 준비를 강제로 중지하고 있습니다.' : 'Minecraft를 종료하고 있습니다.');
     return;
   }
   if (state.launchState !== 'idle') return;
   state.activeInstanceId = inst.id; state.launchState = 'preparing';
-  $('#overlayInstanceName').textContent = inst.name; $('#logBox').textContent = 'Minecraft 실행 준비 중…';
+  $('#overlayInstanceName').textContent = inst.name;
   $('#progressBar').style.width = '1%'; applyLaunchState({ state: 'preparing', instanceId: inst.id });
   const r = await api.launchGame(inst.id);
   if (!r.ok) {
@@ -424,13 +461,14 @@ function renderLauncherUpdate(u = {}) {
   overlayInstall.classList.add('hidden');
   overlayInstall.disabled = false;
   check.disabled = false;
+  check.textContent = '지금 확인';
 
   const messages = {
     idle: '실행 시 백그라운드에서 업데이트를 확인합니다.',
     dev: '개발 모드에서는 설치형 업데이트를 검사하지 않습니다.',
     unconfigured: 'GitHub 업데이트 저장소를 감지하지 못했습니다.',
     checking: '새 버전을 확인하는 중…',
-    latest: '현재 최신 버전입니다.',
+    latest: `최신 버전입니다 · v${s.currentVersion || $('#appVersion').textContent.replace(/^v/, '')}`,
     available: `새 버전 ${s.availableVersion || ''} 발견. 자동 다운로드를 시작합니다…`,
     downloading: `버전 ${s.availableVersion || ''} 다운로드 중… ${Math.round(s.percent || 0)}%`,
     downloaded: `버전 ${s.availableVersion || ''} 준비 완료. 재시작하면 자동 적용됩니다.`,
@@ -441,6 +479,7 @@ function renderLauncherUpdate(u = {}) {
   overlayText.textContent = message;
 
   if (s.state === 'checking' || s.state === 'downloading' || s.state === 'available') check.disabled = true;
+  if (s.state === 'latest') check.textContent = '✓ 최신 버전';
   if (s.state === 'downloaded') {
     action.textContent = '재시작하여 업데이트';
     action.dataset.action = 'install';
@@ -487,7 +526,10 @@ $('#createInstanceBtn').addEventListener('click', async () => {
   if (!r.ok) { toast(r.error || '만들기 실패', true); return; }
   state.config = r.config; closeCreateModal(); renderSelected(); switchView('play'); toast(`${r.instance.name} 인스턴스를 만들었습니다.`);
 });
-$('#instanceNameInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#createInstanceBtn').click(); });
+let instanceNameComposing = false;
+$('#instanceNameInput').addEventListener('compositionstart', () => { instanceNameComposing = true; });
+$('#instanceNameInput').addEventListener('compositionend', () => { instanceNameComposing = false; });
+$('#instanceNameInput').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && !instanceNameComposing && e.keyCode !== 229) $('#createInstanceBtn').click(); });
 
 $('#heroInstanceSettingsBtn').addEventListener('click', () => openInstanceSettings());
 $('#settingsInstanceBtn').addEventListener('click', () => openInstanceSettings());
@@ -512,6 +554,7 @@ $('#saveInstanceSettingsBtn').addEventListener('click', async () => {
 $('#loginBtn').addEventListener('click', login); $('#settingsLoginBtn').addEventListener('click', login);
 $('#logoutBtn').addEventListener('click', async () => { await api.logout(); state.account = null; renderAccount(); toast('로그아웃했습니다.'); });
 $('#launchBtn').addEventListener('click', launchOrStop);
+$('#overlayStopBtn').addEventListener('click', launchOrStop);
 
 $$('.quick-add').forEach(b => b.addEventListener('click', () => { selectContentType(b.dataset.type, false); switchView('content'); $('#modrinthSearchInput').focus(); }));
 $$('.content-tab').forEach(b => b.addEventListener('click', () => selectContentType(b.dataset.type)));
@@ -522,7 +565,7 @@ $('#updateAllBtn').addEventListener('click', async () => {
   const btn = $('#updateAllBtn'); btn.disabled = true; btn.textContent = '업데이트 중…';
   const r = await api.modrinthUpdateAll(inst.id); btn.disabled = false; btn.textContent = '모두 업데이트';
   if (!r.ok) { toast(r.error || '일괄 업데이트 실패', true); return; }
-  toast(`${r.count}개 콘텐츠 업데이트 완료`); state.updates = new Map(); updateBanner(); await renderContent(); await refreshSearchInstalledFlags();
+  toast(`${r.count}개 콘텐츠 업데이트 완료`); state.updates = new Map(); updateBanner(); await refreshCapabilities(); await renderContent(); await refreshSearchInstalledFlags();
 });
 $('#pickContentBtn').addEventListener('click', () => addPicked());
 $('#openContentFolderBtn').addEventListener('click', () => { const i = currentInstance(); if (i) api.openContentFolder(i.id, state.contentType); });
@@ -537,7 +580,7 @@ dz.addEventListener('drop', async e => {
   const paths = [...e.dataTransfer.files].map(f => { try { return api.getFilePath(f); } catch { return null; } }).filter(Boolean);
   if (!paths.length) { toast('파일 경로를 읽지 못했습니다.', true); return; }
   const r = await api.addContentPaths(inst.id, state.contentType, paths);
-  if (r.added?.length) toast(`${r.added.length}개 파일을 추가했습니다.`); if (r.skipped?.length) toast(`지원하지 않는 파일 ${r.skipped.length}개를 건너뛰었습니다.`, true); renderContent();
+  if (r.added?.length) toast(`${r.added.length}개 파일을 추가했습니다.`); if (r.skipped?.length) toast(`지원하지 않는 파일 ${r.skipped.length}개를 건너뛰었습니다.`, true); await refreshCapabilities(); renderContent();
 });
 
 $('#launcherUpdateCheckBtn').addEventListener('click', async () => { const r = await api.checkLauncherUpdate(); if (!r.ok) toast(r.error || '업데이트 확인 실패', true); });
@@ -551,11 +594,10 @@ $('#launcherUpdateActionBtn').addEventListener('click', async () => {
 
 api.onAccountChanged(account => { state.account = account; renderAccount(); });
 api.onStatus(s => { if (s?.text && s.kind === 'error') toast(s.text, true); });
-api.onLaunchProgress(p => { if (p?.text) setStatus(p.text, p.percent ?? null); if (p?.text) appendLog(p.text); });
+api.onLaunchProgress(p => { if (state.launchState !== 'stopping' && p?.text) setStatus(p.text, p.percent ?? null); });
 api.onLaunchState(applyLaunchState);
-api.onGameLog(line => appendLog(line));
-api.onLaunchError(message => { setStatus('실행 오류', 0); toast(message, true); appendLog(`ERROR: ${message}`); applyLaunchState({ state: 'idle', instanceId: state.activeInstanceId, error: message }); });
-api.onLaunchClosed(() => { setStatus('게임 종료', 0); appendLog('Minecraft가 종료되었습니다.'); applyLaunchState({ state: 'idle', instanceId: state.activeInstanceId }); });
+api.onLaunchError(message => { setStatus('실행 오류', 0); toast(message, true); applyLaunchState({ state: 'idle', instanceId: state.activeInstanceId, error: message }); });
+api.onLaunchClosed(() => { setStatus('게임 종료', 0); applyLaunchState({ state: 'idle', instanceId: state.activeInstanceId }); });
 api.onContentProgress(info => { if (info?.text) toast(info.text); });
 api.onLauncherUpdateState(renderLauncherUpdate);
 
