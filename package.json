@@ -1,0 +1,57 @@
+{
+  "name": "easycraft-launcher",
+  "version": "0.2.0",
+  "description": "Windows Minecraft Java launcher with isolated instances, Modrinth search/install/update, and easy content management",
+  "main": "src/main.js",
+  "author": "EasyCraft Launcher",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "minecraft-java-core": "4.2.9"
+  },
+  "devDependencies": {
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.easycraft.launcher",
+    "productName": "EasyCraft Launcher",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/minecraft-java-core/**",
+      "node_modules/7zip-bin/**"
+    ],
+    "files": [
+      "src/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "EasyCraft-Launcher-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EasyCraft Launcher"
+    }
+  }
+}

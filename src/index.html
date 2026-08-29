@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EasyCraft Launcher</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-cube"><span></span></div>
+        <div>
+          <strong>EasyCraft</strong>
+          <small>Launcher</small>
+        </div>
+      </div>
+
+      <nav>
+        <button class="nav-item active" data-view="play"><span>▶</span> 플레이</button>
+        <button class="nav-item" data-view="instances"><span>▦</span> 인스턴스</button>
+        <button class="nav-item" data-view="content"><span>◆</span> 모드 & 콘텐츠</button>
+        <button class="nav-item" data-view="settings"><span>⚙</span> 설정</button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <div class="account-card" id="accountCard">
+          <div class="avatar">?</div>
+          <div class="account-text">
+            <strong id="accountName">로그인 필요</strong>
+            <small id="accountHint">Microsoft 계정</small>
+          </div>
+        </div>
+        <button class="secondary full" id="loginBtn">Microsoft 로그인</button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">플레이</h1>
+          <p id="pageSubtitle">인스턴스를 고르고 바로 Minecraft를 실행하세요.</p>
+        </div>
+        <div class="top-actions">
+          <span class="pill" id="selectedPill">인스턴스 없음</span>
+          <button class="icon-btn" id="openGameFolderBtn" title="인스턴스 폴더 열기">↗</button>
+        </div>
+      </header>
+
+      <section class="view active" id="view-play">
+        <div class="hero card">
+          <div class="hero-copy">
+            <div class="eyebrow">SELECTED INSTANCE</div>
+            <h2 id="heroInstanceName">인스턴스를 만들어 주세요</h2>
+            <p id="heroMeta">Minecraft 버전과 모드 로더를 고른 뒤 실행할 수 있습니다.</p>
+            <div class="hero-actions">
+              <button class="primary big" id="launchBtn">▶ 게임 실행</button>
+              <button class="secondary big" id="goInstancesBtn">인스턴스 관리</button>
+            </div>
+          </div>
+          <div class="pixel-art" aria-hidden="true">
+            <div class="block grass"></div><div class="block dirt"></div><div class="block stone"></div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card quick-card">
+            <div class="card-heading">
+              <div><h3>빠른 콘텐츠 추가</h3><p>파일을 고르면 현재 인스턴스에 바로 복사됩니다.</p></div>
+            </div>
+            <div class="quick-buttons">
+              <button class="quick-add" data-type="mods"><b>MOD</b><span>Modrinth에서 모드 찾기</span></button>
+              <button class="quick-add" data-type="resourcepacks"><b>RP</b><span>리소스팩 검색</span></button>
+              <button class="quick-add" data-type="shaderpacks"><b>SH</b><span>셰이더 검색</span></button>
+            </div>
+          </div>
+          <div class="card status-card">
+            <div class="card-heading"><div><h3>실행 상태</h3><p id="statusText">대기 중</p></div><span class="status-dot"></span></div>
+            <div class="progress-wrap"><div class="progress-bar" id="progressBar"></div></div>
+            <div class="log-box" id="logBox">게임을 실행하면 진행 상황이 여기에 표시됩니다.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-instances">
+        <div class="section-toolbar">
+          <div><h2>내 인스턴스</h2><p>버전/로더별로 Minecraft 환경을 완전히 분리합니다.</p></div>
+          <button class="primary" id="newInstanceBtn">＋ 새 인스턴스</button>
+        </div>
+        <div class="instance-grid" id="instanceGrid"></div>
+      </section>
+
+      <section class="view" id="view-content">
+        <div class="section-toolbar">
+          <div><h2>Modrinth 콘텐츠</h2><p id="contentInstanceHint">먼저 인스턴스를 선택해 주세요.</p></div>
+          <div class="toolbar-actions">
+            <button class="secondary" id="checkUpdatesBtn">업데이트 확인</button>
+            <button class="secondary" id="openContentFolderBtn">폴더 열기</button>
+          </div>
+        </div>
+        <div class="content-tabs">
+          <button class="content-tab active" data-type="mods">Mods</button>
+          <button class="content-tab" data-type="resourcepacks">Resource Packs</button>
+          <button class="content-tab" data-type="shaderpacks">Shaders</button>
+        </div>
+
+        <div class="market-card card">
+          <div class="market-search-row">
+            <input class="text-input" id="modrinthSearchInput" placeholder="Modrinth에서 검색... 예: Sodium, Iris, JEI" />
+            <button class="primary" id="modrinthSearchBtn">검색</button>
+          </div>
+          <div class="market-note" id="marketNote">현재 인스턴스의 Minecraft 버전과 로더에 맞는 콘텐츠만 검색합니다.</div>
+          <div class="update-banner hidden" id="updateBanner">
+            <span id="updateText"></span>
+            <button class="primary" id="updateAllBtn">모두 업데이트</button>
+          </div>
+          <div class="market-grid" id="modrinthResults">
+            <div class="empty-state compact">검색어를 입력하거나 검색 버튼을 눌러 인기 콘텐츠를 확인하세요.</div>
+          </div>
+        </div>
+
+        <div class="installed-head">
+          <div><h3>현재 인스턴스에 설치됨</h3><p>Modrinth에서 설치한 파일과 직접 넣은 파일을 함께 관리합니다.</p></div>
+        </div>
+        <div class="content-list" id="contentList"></div>
+
+        <details class="manual-box">
+          <summary>직접 파일 추가 (고급)</summary>
+          <div class="drop-zone" id="dropZone">
+            <div class="drop-icon">⇩</div>
+            <h3 id="dropTitle">모드 파일을 여기에 끌어놓으세요</h3>
+            <p id="dropHint">.jar 파일을 직접 추가할 수도 있습니다.</p>
+            <button class="secondary" id="pickContentBtn">내 PC에서 파일 선택</button>
+          </div>
+        </details>
+      </section>
+
+      <section class="view" id="view-settings">
+        <div class="settings-grid">
+          <div class="card settings-card">
+            <h3>메모리</h3><p>Minecraft에 할당할 RAM을 설정합니다.</p>
+            <label>최소 RAM <span id="minRamValue">2 GB</span></label>
+            <input type="range" id="minRam" min="1" max="16" step="1" value="2" />
+            <label>최대 RAM <span id="maxRamValue">6 GB</span></label>
+            <input type="range" id="maxRam" min="2" max="32" step="1" value="6" />
+            <button class="primary" id="saveMemoryBtn">저장</button>
+          </div>
+          <div class="card settings-card">
+            <h3>계정</h3><p>Minecraft Java Edition을 보유한 Microsoft 계정이 필요합니다.</p>
+            <button class="secondary" id="settingsLoginBtn">Microsoft 로그인</button>
+            <button class="danger ghost" id="logoutBtn">로그아웃</button>
+          </div>
+          <div class="card settings-card">
+            <h3>데이터 구조</h3><p>각 인스턴스는 mods, resourcepacks, shaderpacks, saves를 서로 공유하지 않습니다. 인스턴스를 삭제하면 이 폴더 전체와 관련 콘텐츠도 같이 삭제됩니다.</p>
+            <button class="secondary" id="settingsOpenFolderBtn">현재 인스턴스 폴더 열기</button>
+          </div>
+          <div class="card settings-card">
+            <h3>EasyCraft 업데이트</h3><p>현재 버전 <b id="appVersion">-</b>. 이번 버전부터 설치한 Modrinth 콘텐츠의 업데이트 확인/일괄 업데이트를 지원합니다.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="instanceModal">
+    <div class="modal">
+      <div class="modal-head"><div><h2>새 인스턴스</h2><p>원하는 버전과 모드 로더를 선택하세요.</p></div><button class="icon-btn" id="closeModalBtn">×</button></div>
+      <label>이름</label>
+      <input class="text-input" id="instanceNameInput" placeholder="예: Fabric 1.21 모드팩" maxlength="40" />
+      <label>Minecraft 버전</label>
+      <select class="text-input" id="versionSelect"><option value="latest_release">최신 릴리스</option></select>
+      <label>모드 로더</label>
+      <div class="loader-options" id="loaderOptions">
+        <button class="loader-option active" data-loader="vanilla">Vanilla<small>순정</small></button>
+        <button class="loader-option" data-loader="fabric">Fabric<small>가볍고 빠름</small></button>
+        <button class="loader-option" data-loader="forge">Forge<small>전통적인 모드</small></button>
+        <button class="loader-option" data-loader="neoforge">NeoForge<small>최신 Forge 계열</small></button>
+        <button class="loader-option" data-loader="quilt">Quilt<small>Fabric 계열</small></button>
+      </div>
+      <div class="modal-actions"><button class="secondary" id="cancelModalBtn">취소</button><button class="primary" id="createInstanceBtn">만들기</button></div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>
