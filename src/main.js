@@ -10,7 +10,7 @@ let mainWindow;
 let currentAccount = null;
 let activeLauncher = null;
 
-const APP_UA = 'EasyCraftLauncher/0.3.0 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.3.2 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -844,6 +844,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
 let launcherUpdateState = { state: 'idle', currentVersion: app.getVersion(), availableVersion: null, percent: 0, repository: null };
 let autoUpdaterInstance = null;
 let launcherUpdateTimer = null;
+let updateRepository = null;
 
 function readBuildInfo() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')); }
@@ -853,43 +854,83 @@ function setLauncherUpdateState(patch) {
   launcherUpdateState = { ...launcherUpdateState, ...patch, currentVersion: app.getVersion() };
   send('launcher-update-state', launcherUpdateState);
 }
+function friendlyUpdateError(error, repository = updateRepository) {
+  const raw = String(error?.message || error || '').trim();
+  const repo = repository || 'GitHub 업데이트 저장소';
+  if (/404|releases\.atom|not found/i.test(raw)) {
+    return `${repo}에 공개적으로 접근할 수 없습니다. 저장소를 Public으로 설정하고, v${app.getVersion()} 이상의 GitHub Release를 Draft가 아닌 Published 상태로 올렸는지 확인해 주세요.`;
+  }
+  if (/401|403|authentication|token|GH_TOKEN/i.test(raw)) {
+    return `${repo} 업데이트에 접근 권한이 없습니다. 일반 사용자 자동 업데이트는 Public GitHub 저장소를 사용해 주세요.`;
+  }
+  return raw || '알 수 없는 업데이트 오류입니다.';
+}
+async function githubUpdatePreflight(repository) {
+  const [owner, repo] = String(repository || '').split('/');
+  if (!owner || !repo) throw new Error('업데이트 저장소 주소가 올바르지 않습니다.');
+  const headers = {
+    'User-Agent': APP_UA,
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  const repoRes = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { headers });
+  if (!repoRes.ok) {
+    if (repoRes.status === 404) throw new Error(`404: ${repository} repository is not publicly accessible`);
+    throw new Error(`GitHub 저장소 확인 실패 (HTTP ${repoRes.status})`);
+  }
+
+  // A published release is required for electron-updater. A missing release is
+  // reported separately instead of exposing electron-updater's long raw 404.
+  const releaseRes = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/latest`, { headers });
+  if (!releaseRes.ok) {
+    if (releaseRes.status === 404) throw new Error(`404: ${repository} has no published release`);
+    throw new Error(`GitHub Release 확인 실패 (HTTP ${releaseRes.status})`);
+  }
+  return releaseRes.json();
+}
 async function checkForLauncherUpdate({ manual = false } = {}) {
   if (!app.isPackaged) {
     if (manual) setLauncherUpdateState({ state: 'dev' });
     return { ok: false, error: '개발 모드에서는 자동 업데이트를 검사하지 않습니다. 설치된 .exe에서 확인해 주세요.' };
   }
-  if (!autoUpdaterInstance) {
-    return { ok: false, error: '업데이트 기능이 준비되지 않았습니다. GitHub Actions로 빌드한 설치본인지 확인해 주세요.' };
+  if (!autoUpdaterInstance || !updateRepository) {
+    const message = '업데이트 기능이 준비되지 않았습니다. GitHub Actions로 빌드한 설치본인지 확인해 주세요.';
+    if (manual) setLauncherUpdateState({ state: 'unconfigured', error: message });
+    return { ok: false, error: message };
   }
   if (['checking', 'downloading', 'downloaded'].includes(launcherUpdateState.state)) return { ok: true, skipped: true };
   try {
+    setLauncherUpdateState({ state: 'checking', percent: 0, error: null });
+    await githubUpdatePreflight(updateRepository);
     await autoUpdaterInstance.checkForUpdates();
     return { ok: true };
   } catch (error) {
-    const message = error.message || String(error);
+    const message = friendlyUpdateError(error);
     setLauncherUpdateState({ state: 'error', error: message });
     return { ok: false, error: message };
   }
 }
 function scheduleAutomaticUpdateChecks() {
-  // 시작 직후 UI가 뜬 다음 자동으로 한 번 확인합니다.
+  // UI가 뜬 뒤 조용히 검사합니다. '확인 중' 상태는 오른쪽 위 팝업을 띄우지 않습니다.
   const first = setTimeout(() => checkForLauncherUpdate().catch(() => {}), 2500);
   first.unref?.();
 
-  // 런처를 오래 켜 두는 경우에도 4시간마다 새 릴리스를 확인합니다.
+  // 오래 켜 둔 경우 4시간마다 다시 확인합니다.
   launcherUpdateTimer = setInterval(() => {
     checkForLauncherUpdate().catch(() => {});
   }, 4 * 60 * 60 * 1000);
   launcherUpdateTimer.unref?.();
 }
 function initAutoUpdater() {
+  const info = readBuildInfo();
+  const [owner, repo] = String(info.repository || '').split('/');
+  updateRepository = owner && repo ? `${owner}/${repo}` : null;
+
   if (!app.isPackaged) {
-    setLauncherUpdateState({ state: 'dev', repository: readBuildInfo().repository || null });
+    setLauncherUpdateState({ state: 'dev', repository: updateRepository });
     return;
   }
   try {
-    const info = readBuildInfo();
-    const [owner, repo] = String(info.repository || '').split('/');
     if (!owner || !repo) {
       setLauncherUpdateState({ state: 'unconfigured', repository: null });
       return;
@@ -897,29 +938,23 @@ function initAutoUpdater() {
 
     const { autoUpdater } = require('electron-updater');
     autoUpdaterInstance = autoUpdater;
-
-    // 업데이트 발견 즉시 사용자 조작 없이 다운로드합니다.
     autoUpdater.autoDownload = true;
-    // 다운로드가 끝난 뒤 사용자가 런처를 정상 종료해도 업데이트가 적용됩니다.
-    // 오른쪽 위의 '재시작하여 업데이트' 버튼을 누르면 즉시 적용됩니다.
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = false;
-
-    // 현재 프로젝트는 빌드 시 GitHub 저장소 정보를 build-info.json에도 보존합니다.
-    // GitHub Actions에서 만들어진 공개 Release의 latest.yml을 사용합니다.
     autoUpdater.setFeedURL({ provider: 'github', owner, repo });
 
-    setLauncherUpdateState({ state: 'idle', repository: `${owner}/${repo}`, error: null });
+    setLauncherUpdateState({ state: 'idle', repository: updateRepository, error: null });
+    // checking-for-update is intentionally not forced into a popup in the renderer.
     autoUpdater.on('checking-for-update', () => setLauncherUpdateState({ state: 'checking', percent: 0, error: null }));
     autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0, error: null }));
     autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0, error: null }));
     autoUpdater.on('download-progress', p => setLauncherUpdateState({ state: 'downloading', percent: Math.round(p.percent || 0), error: null }));
     autoUpdater.on('update-downloaded', info2 => setLauncherUpdateState({ state: 'downloaded', availableVersion: info2.version, percent: 100, error: null }));
-    autoUpdater.on('error', error => setLauncherUpdateState({ state: 'error', error: error.message || String(error) }));
+    autoUpdater.on('error', error => setLauncherUpdateState({ state: 'error', error: friendlyUpdateError(error) }));
 
     scheduleAutomaticUpdateChecks();
   } catch (error) {
-    setLauncherUpdateState({ state: 'error', error: error.message || String(error) });
+    setLauncherUpdateState({ state: 'error', error: friendlyUpdateError(error) });
   }
 }
 
@@ -927,18 +962,16 @@ ipcMain.handle('check-launcher-update', async () => checkForLauncherUpdate({ man
 ipcMain.handle('download-launcher-update', async () => {
   if (!autoUpdaterInstance) return { ok: false, error: '업데이트 기능이 준비되지 않았습니다.' };
   try {
-    // 0.3.1부터는 원래 자동 다운로드되지만 수동 버튼/이전 UI와의 호환을 위해 유지합니다.
     await autoUpdaterInstance.downloadUpdate();
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: error.message || String(error) };
+    return { ok: false, error: friendlyUpdateError(error) };
   }
 });
 ipcMain.handle('install-launcher-update', async () => {
   if (!autoUpdaterInstance || launcherUpdateState.state !== 'downloaded') {
     return { ok: false, error: '다운로드가 완료된 업데이트가 없습니다.' };
   }
-  // Windows NSIS 설치 후 EasyCraft를 다시 실행합니다.
   setImmediate(() => autoUpdaterInstance.quitAndInstall(false, true));
   return { ok: true };
 });

@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.3.1",
-  "description": "Windows Minecraft Java launcher with isolated instances, Modrinth in-app installs, per-instance settings, and automatic in-app updates",
+  "version": "0.3.2",
+  "description": "Windows Minecraft Java launcher with isolated instances, Modrinth in-app installs, per-instance settings, safe uninstall cleanup, and automatic in-app updates",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
@@ -39,6 +39,8 @@
     "publish": [
       {
         "provider": "github",
+        "owner": "pullgena",
+        "repo": "launch-2.0",
         "releaseType": "release"
       }
     ],
@@ -59,7 +61,12 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "EasyCraft Launcher"
+      "shortcutName": "EasyCraft Launcher",
+      "include": "build/installer.nsh"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pullgena/launch-2.0.git"
   }
 }

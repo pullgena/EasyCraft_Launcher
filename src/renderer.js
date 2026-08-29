@@ -123,14 +123,18 @@ function applyLaunchState(payload = {}) {
     $('#statusText').textContent = 'Minecraft 준비 중…';
   } else if (state.launchState === 'running') {
     showLaunchOverlay();
-    $('#statusText').textContent = 'Minecraft 실행 중';
+    $('#statusText').textContent = 'Minecraft 실행됨';
     $('#progressBar').style.width = '100%';
+    // 실행 상태는 메인 버튼의 '■ 게임 종료'로 계속 확인할 수 있으므로
+    // 우측 상단 상태창은 잠깐만 보여 주고 자동으로 숨깁니다.
+    scheduleHideLaunchOverlay(2200);
   } else if (state.launchState === 'stopping') {
     showLaunchOverlay();
     $('#statusText').textContent = 'Minecraft 종료 중…';
   } else {
+    showLaunchOverlay();
     $('#statusText').textContent = payload.error ? '실행 오류' : '게임 종료';
-    if (!payload.error) scheduleHideLaunchOverlay();
+    scheduleHideLaunchOverlay(payload.error ? 6500 : 2200);
   }
   applyLaunchButton();
   renderInstances();
@@ -422,10 +426,10 @@ function renderLauncherUpdate(u = {}) {
   check.disabled = false;
 
   const messages = {
-    idle: '실행 시 자동으로 업데이트를 확인합니다.',
+    idle: '실행 시 백그라운드에서 업데이트를 확인합니다.',
     dev: '개발 모드에서는 설치형 업데이트를 검사하지 않습니다.',
     unconfigured: 'GitHub 업데이트 저장소를 감지하지 못했습니다.',
-    checking: '새 버전을 자동으로 확인하는 중…',
+    checking: '새 버전을 확인하는 중…',
     latest: '현재 최신 버전입니다.',
     available: `새 버전 ${s.availableVersion || ''} 발견. 자동 다운로드를 시작합니다…`,
     downloading: `버전 ${s.availableVersion || ''} 다운로드 중… ${Math.round(s.percent || 0)}%`,
@@ -445,31 +449,31 @@ function renderLauncherUpdate(u = {}) {
   }
   $('#updateRepositoryText').textContent = s.repository ? `업데이트 저장소: ${s.repository}` : '';
 
-  const shouldShowOverlay = ['checking', 'available', 'downloading', 'downloaded', 'error'].includes(s.state);
   clearTimeout(renderLauncherUpdate._hideTimer);
-  if (shouldShowOverlay && !renderLauncherUpdate._dismissed) {
+  // 자동 확인(checking), 최신 상태(latest), 대기(idle)는 조용히 처리합니다.
+  // 팝업은 실제로 사용자에게 알려야 할 일이 있을 때만 표시합니다.
+  const persistent = ['available', 'downloading', 'downloaded'].includes(s.state);
+  if (persistent && !renderLauncherUpdate._dismissed) {
     overlay.classList.remove('hidden');
     $('#launchOverlay').classList.add('updater-visible');
-  } else if (s.state === 'latest') {
+  } else if (s.state === 'error' && !renderLauncherUpdate._dismissed) {
     overlay.classList.remove('hidden');
     $('#launchOverlay').classList.add('updater-visible');
     renderLauncherUpdate._hideTimer = setTimeout(() => {
       overlay.classList.add('hidden');
       $('#launchOverlay').classList.remove('updater-visible');
-    }, 1800);
-  } else if (!shouldShowOverlay) {
+    }, 7000);
+  } else {
     overlay.classList.add('hidden');
     $('#launchOverlay').classList.remove('updater-visible');
   }
 
-  // 새 업데이트를 찾거나 다운로드가 끝나면 이전에 닫았던 알림도 다시 보여 줍니다.
   if (s.state === 'available' || s.state === 'downloaded') {
     renderLauncherUpdate._dismissed = false;
     overlay.classList.remove('hidden');
     $('#launchOverlay').classList.add('updater-visible');
   }
 }
-
 
 $$('.nav-item').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
 $('#goInstancesBtn').addEventListener('click', () => switchView('instances'));
