@@ -840,9 +840,11 @@ ipcMain.handle('launch-game', async (_event, id) => {
   }
 });
 
-// ---------- EasyCraft 자체 업데이트 ----------
+// ---------- EasyCraft 자체 자동 업데이트 ----------
 let launcherUpdateState = { state: 'idle', currentVersion: app.getVersion(), availableVersion: null, percent: 0, repository: null };
 let autoUpdaterInstance = null;
+let launcherUpdateTimer = null;
+
 function readBuildInfo() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')); }
   catch { return { repository: '' }; }
@@ -850,6 +852,35 @@ function readBuildInfo() {
 function setLauncherUpdateState(patch) {
   launcherUpdateState = { ...launcherUpdateState, ...patch, currentVersion: app.getVersion() };
   send('launcher-update-state', launcherUpdateState);
+}
+async function checkForLauncherUpdate({ manual = false } = {}) {
+  if (!app.isPackaged) {
+    if (manual) setLauncherUpdateState({ state: 'dev' });
+    return { ok: false, error: '개발 모드에서는 자동 업데이트를 검사하지 않습니다. 설치된 .exe에서 확인해 주세요.' };
+  }
+  if (!autoUpdaterInstance) {
+    return { ok: false, error: '업데이트 기능이 준비되지 않았습니다. GitHub Actions로 빌드한 설치본인지 확인해 주세요.' };
+  }
+  if (['checking', 'downloading', 'downloaded'].includes(launcherUpdateState.state)) return { ok: true, skipped: true };
+  try {
+    await autoUpdaterInstance.checkForUpdates();
+    return { ok: true };
+  } catch (error) {
+    const message = error.message || String(error);
+    setLauncherUpdateState({ state: 'error', error: message });
+    return { ok: false, error: message };
+  }
+}
+function scheduleAutomaticUpdateChecks() {
+  // 시작 직후 UI가 뜬 다음 자동으로 한 번 확인합니다.
+  const first = setTimeout(() => checkForLauncherUpdate().catch(() => {}), 2500);
+  first.unref?.();
+
+  // 런처를 오래 켜 두는 경우에도 4시간마다 새 릴리스를 확인합니다.
+  launcherUpdateTimer = setInterval(() => {
+    checkForLauncherUpdate().catch(() => {});
+  }, 4 * 60 * 60 * 1000);
+  launcherUpdateTimer.unref?.();
 }
 function initAutoUpdater() {
   if (!app.isPackaged) {
@@ -863,36 +894,51 @@ function initAutoUpdater() {
       setLauncherUpdateState({ state: 'unconfigured', repository: null });
       return;
     }
+
     const { autoUpdater } = require('electron-updater');
     autoUpdaterInstance = autoUpdater;
-    autoUpdater.autoDownload = false;
+
+    // 업데이트 발견 즉시 사용자 조작 없이 다운로드합니다.
+    autoUpdater.autoDownload = true;
+    // 다운로드가 끝난 뒤 사용자가 런처를 정상 종료해도 업데이트가 적용됩니다.
+    // 오른쪽 위의 '재시작하여 업데이트' 버튼을 누르면 즉시 적용됩니다.
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = false;
+
+    // 현재 프로젝트는 빌드 시 GitHub 저장소 정보를 build-info.json에도 보존합니다.
+    // GitHub Actions에서 만들어진 공개 Release의 latest.yml을 사용합니다.
     autoUpdater.setFeedURL({ provider: 'github', owner, repo });
-    setLauncherUpdateState({ state: 'idle', repository: `${owner}/${repo}` });
-    autoUpdater.on('checking-for-update', () => setLauncherUpdateState({ state: 'checking', percent: 0 }));
-    autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0 }));
-    autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0 }));
-    autoUpdater.on('download-progress', p => setLauncherUpdateState({ state: 'downloading', percent: Math.round(p.percent || 0) }));
-    autoUpdater.on('update-downloaded', info2 => setLauncherUpdateState({ state: 'downloaded', availableVersion: info2.version, percent: 100 }));
+
+    setLauncherUpdateState({ state: 'idle', repository: `${owner}/${repo}`, error: null });
+    autoUpdater.on('checking-for-update', () => setLauncherUpdateState({ state: 'checking', percent: 0, error: null }));
+    autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0, error: null }));
+    autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0, error: null }));
+    autoUpdater.on('download-progress', p => setLauncherUpdateState({ state: 'downloading', percent: Math.round(p.percent || 0), error: null }));
+    autoUpdater.on('update-downloaded', info2 => setLauncherUpdateState({ state: 'downloaded', availableVersion: info2.version, percent: 100, error: null }));
     autoUpdater.on('error', error => setLauncherUpdateState({ state: 'error', error: error.message || String(error) }));
+
+    scheduleAutomaticUpdateChecks();
   } catch (error) {
     setLauncherUpdateState({ state: 'error', error: error.message || String(error) });
   }
 }
-ipcMain.handle('check-launcher-update', async () => {
-  if (!app.isPackaged) return { ok: false, error: '개발 모드에서는 자동 업데이트를 검사하지 않습니다. 설치된 .exe에서 확인해 주세요.' };
-  if (!autoUpdaterInstance) return { ok: false, error: '업데이트 저장소를 확인하지 못했습니다. GitHub Actions로 빌드한 설치본인지 확인해 주세요.' };
-  try { await autoUpdaterInstance.checkForUpdates(); return { ok: true }; }
-  catch (error) { return { ok: false, error: error.message || String(error) }; }
-});
+
+ipcMain.handle('check-launcher-update', async () => checkForLauncherUpdate({ manual: true }));
 ipcMain.handle('download-launcher-update', async () => {
   if (!autoUpdaterInstance) return { ok: false, error: '업데이트 기능이 준비되지 않았습니다.' };
-  try { await autoUpdaterInstance.downloadUpdate(); return { ok: true }; }
-  catch (error) { return { ok: false, error: error.message || String(error) }; }
+  try {
+    // 0.3.1부터는 원래 자동 다운로드되지만 수동 버튼/이전 UI와의 호환을 위해 유지합니다.
+    await autoUpdaterInstance.downloadUpdate();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message || String(error) };
+  }
 });
 ipcMain.handle('install-launcher-update', async () => {
-  if (!autoUpdaterInstance || launcherUpdateState.state !== 'downloaded') return { ok: false, error: '다운로드된 업데이트가 없습니다.' };
+  if (!autoUpdaterInstance || launcherUpdateState.state !== 'downloaded') {
+    return { ok: false, error: '다운로드가 완료된 업데이트가 없습니다.' };
+  }
+  // Windows NSIS 설치 후 EasyCraft를 다시 실행합니다.
   setImmediate(() => autoUpdaterInstance.quitAndInstall(false, true));
   return { ok: true };
 });

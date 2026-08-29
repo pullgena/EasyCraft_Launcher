@@ -403,22 +403,73 @@ async function launchOrStop() {
 function renderLauncherUpdate(u = {}) {
   state.launcherUpdate = { ...state.launcherUpdate, ...u };
   const s = state.launcherUpdate;
-  const text = $('#launcherUpdateText'); const progress = $('#launcherUpdateProgress');
-  const check = $('#launcherUpdateCheckBtn'); const action = $('#launcherUpdateActionBtn');
-  progress.style.width = `${Math.max(0, Math.min(100, Number(s.percent) || 0))}%`;
-  action.classList.add('hidden'); action.disabled = false; check.disabled = false;
+  const text = $('#launcherUpdateText');
+  const progress = $('#launcherUpdateProgress');
+  const check = $('#launcherUpdateCheckBtn');
+  const action = $('#launcherUpdateActionBtn');
+  const overlay = $('#launcherUpdateOverlay');
+  const overlayText = $('#overlayUpdateText');
+  const overlayProgress = $('#overlayUpdateProgress');
+  const overlayInstall = $('#overlayUpdateInstallBtn');
+
+  const pct = Math.max(0, Math.min(100, Number(s.percent) || 0));
+  progress.style.width = `${pct}%`;
+  overlayProgress.style.width = `${pct}%`;
+  action.classList.add('hidden');
+  action.disabled = false;
+  overlayInstall.classList.add('hidden');
+  overlayInstall.disabled = false;
+  check.disabled = false;
+
   const messages = {
-    idle: '업데이트 확인 전', dev: '개발 모드에서는 설치형 업데이트를 검사하지 않습니다.', unconfigured: 'GitHub 업데이트 저장소를 감지하지 못했습니다.',
-    checking: '새 버전을 확인하는 중…', latest: '현재 최신 버전입니다.', available: `새 버전 ${s.availableVersion || ''}을 사용할 수 있습니다.`,
-    downloading: `업데이트 다운로드 중… ${Math.round(s.percent || 0)}%`, downloaded: `버전 ${s.availableVersion || ''} 다운로드 완료. 재시작하면 적용됩니다.`,
+    idle: '실행 시 자동으로 업데이트를 확인합니다.',
+    dev: '개발 모드에서는 설치형 업데이트를 검사하지 않습니다.',
+    unconfigured: 'GitHub 업데이트 저장소를 감지하지 못했습니다.',
+    checking: '새 버전을 자동으로 확인하는 중…',
+    latest: '현재 최신 버전입니다.',
+    available: `새 버전 ${s.availableVersion || ''} 발견. 자동 다운로드를 시작합니다…`,
+    downloading: `버전 ${s.availableVersion || ''} 다운로드 중… ${Math.round(s.percent || 0)}%`,
+    downloaded: `버전 ${s.availableVersion || ''} 준비 완료. 재시작하면 자동 적용됩니다.`,
     error: `업데이트 오류: ${s.error || '알 수 없는 오류'}`
   };
-  text.textContent = messages[s.state] || messages.idle;
-  if (s.state === 'checking' || s.state === 'downloading') check.disabled = true;
-  if (s.state === 'available') { action.textContent = '다운로드'; action.dataset.action = 'download'; action.classList.remove('hidden'); }
-  if (s.state === 'downloaded') { action.textContent = '설치하고 재시작'; action.dataset.action = 'install'; action.classList.remove('hidden'); }
+  const message = messages[s.state] || messages.idle;
+  text.textContent = message;
+  overlayText.textContent = message;
+
+  if (s.state === 'checking' || s.state === 'downloading' || s.state === 'available') check.disabled = true;
+  if (s.state === 'downloaded') {
+    action.textContent = '재시작하여 업데이트';
+    action.dataset.action = 'install';
+    action.classList.remove('hidden');
+    overlayInstall.classList.remove('hidden');
+  }
   $('#updateRepositoryText').textContent = s.repository ? `업데이트 저장소: ${s.repository}` : '';
+
+  const shouldShowOverlay = ['checking', 'available', 'downloading', 'downloaded', 'error'].includes(s.state);
+  clearTimeout(renderLauncherUpdate._hideTimer);
+  if (shouldShowOverlay && !renderLauncherUpdate._dismissed) {
+    overlay.classList.remove('hidden');
+    $('#launchOverlay').classList.add('updater-visible');
+  } else if (s.state === 'latest') {
+    overlay.classList.remove('hidden');
+    $('#launchOverlay').classList.add('updater-visible');
+    renderLauncherUpdate._hideTimer = setTimeout(() => {
+      overlay.classList.add('hidden');
+      $('#launchOverlay').classList.remove('updater-visible');
+    }, 1800);
+  } else if (!shouldShowOverlay) {
+    overlay.classList.add('hidden');
+    $('#launchOverlay').classList.remove('updater-visible');
+  }
+
+  // 새 업데이트를 찾거나 다운로드가 끝나면 이전에 닫았던 알림도 다시 보여 줍니다.
+  if (s.state === 'available' || s.state === 'downloaded') {
+    renderLauncherUpdate._dismissed = false;
+    overlay.classList.remove('hidden');
+    $('#launchOverlay').classList.add('updater-visible');
+  }
 }
+
 
 $$('.nav-item').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
 $('#goInstancesBtn').addEventListener('click', () => switchView('instances'));
@@ -486,6 +537,8 @@ dz.addEventListener('drop', async e => {
 });
 
 $('#launcherUpdateCheckBtn').addEventListener('click', async () => { const r = await api.checkLauncherUpdate(); if (!r.ok) toast(r.error || '업데이트 확인 실패', true); });
+$('#overlayUpdateCloseBtn').addEventListener('click', () => { renderLauncherUpdate._dismissed = true; $('#launcherUpdateOverlay').classList.add('hidden'); $('#launchOverlay').classList.remove('updater-visible'); });
+$('#overlayUpdateInstallBtn').addEventListener('click', async () => { const btn = $('#overlayUpdateInstallBtn'); btn.disabled = true; btn.textContent = '업데이트 적용 중…'; const r = await api.installLauncherUpdate(); if (!r.ok) { btn.disabled = false; btn.textContent = '재시작하여 업데이트'; toast(r.error || '업데이트 적용 실패', true); } });
 $('#launcherUpdateActionBtn').addEventListener('click', async () => {
   const btn = $('#launcherUpdateActionBtn'); btn.disabled = true;
   const r = btn.dataset.action === 'install' ? await api.installLauncherUpdate() : await api.downloadLauncherUpdate();

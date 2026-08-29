@@ -108,9 +108,9 @@
           <div class="card settings-card update-settings-card">
             <h3>EasyCraft 업데이트</h3>
             <p>현재 버전 <b id="appVersion">-</b>. GitHub Release의 새 버전을 프로그램 안에서 확인하고 적용합니다.</p>
-            <div class="update-status-line" id="launcherUpdateText">업데이트 확인 전</div>
+            <div class="update-status-line" id="launcherUpdateText">실행 시 자동으로 업데이트를 확인합니다.</div>
             <div class="progress-wrap updater-progress"><div class="progress-bar" id="launcherUpdateProgress"></div></div>
-            <div class="settings-button-row"><button class="secondary" id="launcherUpdateCheckBtn">업데이트 확인</button><button class="primary hidden" id="launcherUpdateActionBtn">다운로드</button></div>
+            <div class="settings-button-row"><button class="secondary" id="launcherUpdateCheckBtn">지금 확인</button><button class="primary hidden" id="launcherUpdateActionBtn">재시작하여 업데이트</button></div>
             <small class="settings-note" id="updateRepositoryText"></small>
           </div>
           <div class="card settings-card">
@@ -120,6 +120,15 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div class="launcher-update-overlay hidden" id="launcherUpdateOverlay">
+    <div class="launcher-update-overlay-head">
+      <div><strong>EasyCraft 업데이트</strong><small id="overlayUpdateText">새 버전을 확인하는 중…</small></div>
+      <button class="overlay-close" id="overlayUpdateCloseBtn" type="button" aria-label="업데이트 알림 닫기">×</button>
+    </div>
+    <div class="progress-wrap"><div class="progress-bar" id="overlayUpdateProgress"></div></div>
+    <button class="primary hidden overlay-update-action" id="overlayUpdateInstallBtn" type="button">재시작하여 업데이트</button>
   </div>
 
   <div class="launch-overlay hidden" id="launchOverlay">
