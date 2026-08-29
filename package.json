@@ -1,6 +1,6 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.3.0",
+  "version": "v0.3.0",
   "description": "Windows Minecraft Java launcher with isolated instances, Modrinth in-app installs, per-instance settings, and in-app updates",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
