@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.0',
+  appVersion: '0.4.1',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -41,7 +41,10 @@ function renderAccount() {
   const account = state.account;
   $('#accountName').textContent = account?.name || '로그인 필요';
   $('#accountSub').textContent = account ? 'Microsoft 연결됨' : 'Microsoft 계정';
-  $('#accountAvatar').textContent = account?.name?.trim()?.[0]?.toUpperCase() || '?';
+  const avatar=$('#accountAvatar');
+  avatar.textContent = account?.skinUrl ? '' : (account?.name?.trim()?.[0]?.toUpperCase() || '?');
+  avatar.classList.toggle('skin-head', !!account?.skinUrl);
+  avatar.style.backgroundImage = account?.skinUrl ? `url("${String(account.skinUrl).replace(/["\\]/g,'')}")` : '';
   $('#railLoginBtn').classList.toggle('hidden', !!account);
   $('#railLogoutBtn').classList.toggle('hidden', !account);
   $('#settingsLoginBtn').classList.toggle('hidden', !!account);
@@ -66,10 +69,10 @@ function renderHero() {
 function renderPlayButton() {
   const btn = $('#playBtn');
   if (state.launchState === 'preparing') btn.textContent = '■ 준비 중지';
-  else if (state.launchState === 'stopping') btn.textContent = '중지하는 중…';
+  else if (state.launchState === 'stopping') btn.textContent = '중지 요청됨';
   else if (state.launchState === 'running') btn.textContent = '■ 게임 종료';
   else btn.textContent = '▶ 게임 실행';
-  btn.disabled = !currentInstance() || state.launchState === 'stopping';
+  btn.disabled = !currentInstance();
 }
 function renderInstances() {
   const grid = $('#instanceGrid'); grid.innerHTML = '';
@@ -139,7 +142,9 @@ async function launchOrStop() {
   if (['preparing','running','stopping'].includes(state.launchState)) {
     if (state.launchState === 'stopping') return;
     state.launchState='stopping'; renderPlayButton(); showLaunchPop('Minecraft 중지 중','실행 준비와 게임 프로세스를 종료하고 있습니다.',null,true);
-    const r=await api.stopGame(inst.id); if(!r.ok){toast(r.error||'중지하지 못했습니다.',true); state.launchState='idle'; renderPlayButton();}
+    const r=await api.stopGame(inst.id);
+    if(!r.ok){toast(r.error||'중지하지 못했습니다.',true); state.launchState='idle'; renderPlayButton();}
+    else if(r.immediate){state.launchState='idle';state.activeInstanceId=null;renderPlayButton();hideLaunchPop();toast('Minecraft 중지를 요청했습니다.');}
     return;
   }
   if (!state.account) { toast('먼저 Microsoft 계정으로 로그인해 주세요.', true); return login(); }
@@ -152,7 +157,7 @@ function hideLaunchPop(){ $('#launchPop').classList.add('hidden'); $('#launchPro
 function applyLaunchState(v={}) {
   state.launchState=v.state||'idle'; state.activeInstanceId=v.instanceId||state.activeInstanceId; renderPlayButton();
   if(state.launchState==='preparing') showLaunchPop('Minecraft 준비 중',v.name?`${v.name}을(를) 준비하고 있습니다.`:'필요한 파일을 확인하고 있습니다.',2,true);
-  else if(state.launchState==='stopping') showLaunchPop('Minecraft 중지 중','준비 작업과 실행 프로세스를 종료하고 있습니다.',null,false);
+  else if(state.launchState==='stopping'){showLaunchPop('Minecraft 중지 중','종료 요청을 보냈습니다.',null,false);clearTimeout(applyLaunchState._stopT);applyLaunchState._stopT=setTimeout(hideLaunchPop,350);}
   else if(state.launchState==='running'){ showLaunchPop('Minecraft 실행됨',v.name?`${v.name}이(가) 실행 중입니다.`:'게임이 실행 중입니다.',100,false); clearTimeout(applyLaunchState._t); applyLaunchState._t=setTimeout(hideLaunchPop,1800); }
   else { hideLaunchPop(); state.activeInstanceId=null; }
 }
@@ -167,7 +172,7 @@ async function renderContent() {
   const list=$('#installedList'); list.innerHTML='';
   if(!items.length){list.innerHTML='<div class="empty">설치된 콘텐츠가 없습니다.</div>';} else for(const item of items){
     const row=document.createElement('div'); row.className='installed-item';
-    row.innerHTML=`<div class="result-placeholder">${state.contentType==='mods'?'M':state.contentType==='resourcepacks'?'R':'S'}</div><div class="item-copy"><strong>${esc(item.title||item.displayName)}</strong><span>${item.managed?`Modrinth${item.versionNumber?` · ${esc(item.versionNumber)}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'} · ${item.enabled?'사용 중':'꺼짐'}</span></div><div class="item-actions"><button class="btn subtle small toggle">${item.enabled?'끄기':'켜기'}</button>${item.managed&&!item.autoDependency?'<button class="btn subtle small update">업데이트</button>':''}<button class="btn danger small remove">삭제</button></div>`;
+    row.innerHTML=`${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:`<div class="result-placeholder">${state.contentType==='mods'?'M':state.contentType==='resourcepacks'?'R':'S'}</div>`}<div class="item-copy"><strong>${esc(item.title||item.displayName)}</strong><span>${item.managed?`Modrinth${item.versionNumber?` · ${esc(item.versionNumber)}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'} · ${item.enabled?'사용 중':'꺼짐'}</span></div><div class="item-actions"><button class="btn subtle small toggle">${item.enabled?'끄기':'켜기'}</button>${item.managed&&!item.autoDependency?'<button class="btn subtle small update">업데이트</button>':''}<button class="btn danger small remove">삭제</button></div>`;
     row.querySelector('.toggle').addEventListener('click',async()=>{const r=await api.toggleContent(inst.id,state.contentType,item.name);if(!r.ok)toast(r.error||'변경 실패',true);await refreshCapabilities();await renderContent();});
     row.querySelector('.update')?.addEventListener('click',async e=>{e.target.disabled=true;e.target.textContent='확인 중…';const r=await api.modrinthUpdate(inst.id,item.projectId);if(!r.ok)toast(r.error||'업데이트 실패',true);else toast('업데이트를 적용했습니다.');await refreshCapabilities();await renderContent();});
     row.querySelector('.remove').addEventListener('click',async()=>{if(!confirm(`${item.title||item.displayName}을(를) 삭제할까요?`))return;const r=await api.deleteContent(inst.id,state.contentType,item.name);if(!r.ok)toast(r.error||'삭제 실패',true);await refreshCapabilities();await renderContent();});
@@ -223,7 +228,7 @@ api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.0';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.1';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
   $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
   renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
   const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';

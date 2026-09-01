@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.0",
-  "description": "EasyCraft Launcher 0.4.0 - redesigned Windows Minecraft Java launcher with Modrinth content, isolated instances, Microsoft logout, reliable launch flow, and user-confirmed startup updates",
+  "version": "0.4.1",
+  "description": "EasyCraft Launcher 0.4.1 - faster Minecraft launch/stop, Minecraft skin avatar, installed Modrinth icons, and cleaner launcher UI",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",

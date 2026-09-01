@@ -9,8 +9,10 @@ const { Launch, Microsoft } = require('minecraft-java-core');
 let mainWindow;
 let currentAccount = null;
 let activeLauncher = null;
+const preparedLaunchers = new Map();
+let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.0 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.1 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -100,8 +102,32 @@ function accountSummary(account) {
   if (!account || account.error) return null;
   return {
     name: account.name || account.username || account.profile?.name || 'Microsoft 계정',
-    uuid: account.uuid || account.id || account.profile?.id || null
+    uuid: account.uuid || account.id || account.profile?.id || null,
+    skinUrl: account._easycraftSkinUrl || null
   };
+}
+async function fetchSkinUrlForAccount(account) {
+  const uuid = String(account?.uuid || account?.id || account?.profile?.id || '').replace(/-/g, '');
+  if (!uuid) return null;
+  try {
+    const profile = await fetchJson(`https://sessionserver.mojang.com/session/minecraft/profile/${encodeURIComponent(uuid)}?unsigned=true`);
+    const texturesProp = (profile?.properties || []).find(p => p.name === 'textures' && p.value);
+    if (!texturesProp) return null;
+    const decoded = JSON.parse(Buffer.from(texturesProp.value, 'base64').toString('utf8'));
+    const url = decoded?.textures?.SKIN?.url || null;
+    return /^https?:\/\/textures\.minecraft\.net\/texture\//i.test(String(url || '')) ? url : null;
+  } catch { return null; }
+}
+async function refreshAccountVisual(account) {
+  if (!account) return null;
+  const skinUrl = await fetchSkinUrlForAccount(account);
+  if (skinUrl) {
+    account._easycraftSkinUrl = skinUrl;
+    await fsp.writeFile(accountPath(), JSON.stringify(account, null, 2), 'utf8').catch(() => {});
+  }
+  const summary = accountSummary(account);
+  send('account-changed', summary);
+  return summary;
 }
 async function loadSavedAccount() {
   try {
@@ -110,7 +136,10 @@ async function loadSavedAccount() {
     const refreshed = await new Microsoft().refresh(account);
     if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'Microsoft 인증 갱신 실패');
     await fsp.writeFile(accountPath(), JSON.stringify(refreshed, null, 2), 'utf8');
+    refreshed._easycraftRefreshedAt = Date.now();
+    accountRefreshedAt = Date.now();
     currentAccount = refreshed;
+    setTimeout(() => refreshAccountVisual(refreshed).catch(() => {}), 50).unref?.();
     return accountSummary(refreshed);
   } catch {
     currentAccount = null;
@@ -199,9 +228,13 @@ ipcMain.handle('login-microsoft', async () => {
     send('status', { text: 'Microsoft 로그인 창을 준비하고 있습니다…', kind: 'info' });
     const account = await new Microsoft().getAuth();
     if (!account || account.error) throw new Error(account?.error || '로그인에 실패했습니다.');
+    account._easycraftRefreshedAt = Date.now();
+    accountRefreshedAt = Date.now();
     currentAccount = account;
+    preparedLaunchers.clear(); // 계정이 바뀌면 캐시된 실행기의 이전 인증 정보를 재사용하지 않습니다.
     await fsp.writeFile(accountPath(), JSON.stringify(account, null, 2), 'utf8');
     const summary = accountSummary(account);
+    setTimeout(() => refreshAccountVisual(account).catch(() => {}), 50).unref?.();
     send('account-changed', summary);
     send('status', { text: `${summary?.name || '계정'} 로그인 완료`, kind: 'success' });
     return { ok: true, account: summary };
@@ -212,6 +245,7 @@ ipcMain.handle('login-microsoft', async () => {
 });
 ipcMain.handle('logout', async () => {
   currentAccount = null;
+  preparedLaunchers.clear();
   await fsp.rm(accountPath(), { force: true }).catch(() => {});
   send('account-changed', null);
   return { ok: true };
@@ -244,6 +278,7 @@ ipcMain.handle('delete-instance', async (_event, id) => {
   if (config.selectedInstanceId === id) config.selectedInstanceId = config.instances[0]?.id || null;
   await writeConfig(config);
   // game/, mods/, saves/, loader files, Modrinth registry, logs까지 인스턴스 루트 전체 삭제
+  preparedLaunchers.delete(id);
   await fsp.rm(instanceDir(id), { recursive: true, force: true });
   return { ok: true, config };
 });
@@ -255,6 +290,8 @@ ipcMain.handle('update-instance', async (_event, id, patch) => {
   if (patch?.version) instance.version = String(patch.version).trim();
   if (['vanilla', 'fabric', 'forge', 'neoforge', 'quilt'].includes(patch?.loader)) instance.loader = patch.loader;
   await writeConfig(config);
+  preparedLaunchers.delete(id);
+  await fsp.rm(launchReadyMarker(id), { force:true }).catch(() => {});
   return { ok: true, config, instance };
 });
 ipcMain.handle('update-instance-settings', async (_event, id, patch) => {
@@ -283,6 +320,8 @@ ipcMain.handle('update-instance-settings', async (_event, id, patch) => {
   };
   config.instances[index] = instance;
   await writeConfig(config);
+  preparedLaunchers.delete(id);
+  await fsp.rm(launchReadyMarker(id), { force:true }).catch(() => {});
   return { ok: true, config, instance };
 });
 
@@ -332,9 +371,31 @@ async function managedForType(id, type) {
   const meta = validateContentType(type);
   return (await readRegistry(id)).filter(x => x.folder === meta.folder);
 }
+async function enrichRegistryIcons(id, registry) {
+  const missing = registry.filter(x => x.projectId && !x.iconUrl);
+  if (!missing.length) return registry;
+  try {
+    const ids = [...new Set(missing.map(x => x.projectId))];
+    for (let start = 0; start < ids.length; start += 80) {
+      const chunk = ids.slice(start, start + 80);
+      const projects = await fetchJson(`${MODRINTH_API}/projects?ids=${encodeURIComponent(JSON.stringify(chunk))}`);
+      const byId = new Map((projects || []).map(project => [project.id, project]));
+      for (const rec of registry) {
+        const project = byId.get(rec.projectId);
+        if (project) {
+          rec.iconUrl = project.icon_url || null;
+          rec.slug = rec.slug || project.slug || null;
+          rec.title = rec.title || project.title || null;
+        }
+      }
+    }
+    await writeRegistry(id, registry);
+  } catch {}
+  return registry;
+}
 ipcMain.handle('list-content', async (_event, id, type) => {
   const folder = targetFolder(id, type); await fsp.mkdir(folder, { recursive: true });
-  const meta = validateContentType(type), registry = await managedForType(id, type);
+  const meta = validateContentType(type); let registry = await managedForType(id, type); registry = await enrichRegistryIcons(id, registry);
   const byFile = new Map(registry.map(x => [x.fileName, x]));
   const names = await fsp.readdir(folder);
   return names.filter(name => {
@@ -349,7 +410,8 @@ ipcMain.handle('list-content', async (_event, id, type) => {
       projectId: managed?.projectId || null,
       title: managed?.title || null,
       versionNumber: managed?.versionNumber || null,
-      autoDependency: !!managed?.autoDependency
+      autoDependency: !!managed?.autoDependency,
+      iconUrl: managed?.iconUrl || null
     };
   }).sort((a, b) => (a.title || a.displayName).localeCompare(b.title || b.displayName));
 });
@@ -667,7 +729,7 @@ async function installProjectInternal(id, instance, projectId, options = {}, see
     }
     registry = registry.filter(x => x.projectId !== projectId);
     registry.push({
-      projectId, title: project.title, slug: project.slug, projectType,
+      projectId, title: project.title, slug: project.slug, iconUrl: project.icon_url || null, projectType,
       versionId: version.id, versionNumber: version.version_number,
       fileName, folder, hashes: file.hashes || {}, installedAt: new Date().toISOString(),
       autoDependency: options.autoDependency ? (existing ? existing.autoDependency : true) : false,
@@ -803,31 +865,78 @@ function emitLaunchState(state, instanceId, extra = {}) {
   send('launch-state', { state, instanceId, ...extra });
 }
 
+async function findEasyCraftJavaPid(id) {
+  if (process.platform !== 'win32') return null;
+  const marker = `-Deasycraft.instance=${safeId(id)}`.replace(/'/g, "''");
+  const rootNeedle = gameDir(id).replace(/'/g, "''");
+  const script = `$marker='${marker}';$root='${rootNeedle}';$p=@(Get-CimInstance Win32_Process -Filter "Name='javaw.exe'")+@(Get-CimInstance Win32_Process -Filter "Name='java.exe'");$hit=$p|Where-Object{$_.CommandLine -and ($_.CommandLine.Contains($marker) -or $_.CommandLine.Contains($root))}|Select-Object -First 1 -ExpandProperty ProcessId;if($hit){Write-Output $hit}`;
+  return await new Promise(resolve => execFile('powershell.exe', ['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',script], { windowsHide:true, timeout:5000 }, (_e,stdout) => {
+    const pid = Number(String(stdout || '').trim()); resolve(Number.isInteger(pid) && pid > 0 ? pid : null);
+  }));
+}
+function captureEasyCraftJavaPid(id, launchRef) {
+  if (!launchRef || launchRef.pid || launchRef.pidLookupRunning) return;
+  launchRef.pidLookupRunning = true;
+  findEasyCraftJavaPid(id).then(pid => { if (pid && launchRef.instanceId === id) launchRef.pid = pid; }).finally(() => { launchRef.pidLookupRunning = false; });
+}
+function killPidFast(pid) {
+  if (!pid || process.platform !== 'win32') return Promise.resolve(false);
+  return new Promise(resolve => execFile('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { windowsHide:true, timeout:4000 }, err => resolve(!err)));
+}
+async function ensureFreshAccountForLaunch() {
+  if (!currentAccount) return false;
+  const stamped = Number(currentAccount._easycraftRefreshedAt || accountRefreshedAt || 0);
+  // 앱을 오래 켜 둔 경우에만 갱신합니다. 매 실행마다 인증 네트워크를 기다리지 않습니다.
+  if (Date.now() - stamped < 6 * 60 * 60 * 1000) return true;
+  try {
+    const refreshed = await new Microsoft().refresh(currentAccount);
+    if (!refreshed || refreshed.error) return false;
+    refreshed._easycraftSkinUrl = currentAccount._easycraftSkinUrl || null;
+    refreshed._easycraftRefreshedAt = Date.now();
+    currentAccount = refreshed; accountRefreshedAt = Date.now();
+    for (const cached of preparedLaunchers.values()) { if (cached?.launcher?.options) cached.launcher.options.authenticator = refreshed; }
+    await fsp.writeFile(accountPath(), JSON.stringify(refreshed, null, 2), 'utf8');
+    send('account-changed', accountSummary(refreshed));
+    return true;
+  } catch { return false; }
+}
+
 ipcMain.handle('get-launch-state', async () => {
   return activeLauncher ? { state: activeLauncher.state || 'preparing', instanceId: activeLauncher.instanceId } : { state: 'idle', instanceId: null };
 });
 
 ipcMain.handle('stop-game', async (_event, id) => {
   if (!activeLauncher || activeLauncher.instanceId !== id) return { ok: false, error: '이 인스턴스에서 실행 또는 준비 중인 Minecraft가 없습니다.' };
-  activeLauncher.cancelRequested = true;
+  const launchRef = activeLauncher;
+  launchRef.cancelRequested = true;
   emitLaunchState('stopping', id);
-  const needle = safeId(id);
-  const killJava = async () => {
+
+  // PID를 이미 알고 있으면 taskkill로 즉시 종료합니다. 기다리지 않고 UI에는 바로 응답합니다.
+  if (launchRef.pid) killPidFast(launchRef.pid).catch(() => {});
+  else captureEasyCraftJavaPid(id, launchRef);
+
+  const fallbackKill = async () => {
+    if (launchRef.pid) { await killPidFast(launchRef.pid); return; }
     if (process.platform === 'win32') {
-      const psNeedle = needle.replace(/'/g, "''");
+      const marker = `-Deasycraft.instance=${safeId(id)}`.replace(/'/g, "''");
       const rootNeedle = gameDir(id).replace(/'/g, "''");
-      const script = `$idneedle='${psNeedle}'; $rootneedle='${rootNeedle}'; $p=Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'java.exe' -or $_.Name -eq 'javaw.exe') -and $_.CommandLine -and ($_.CommandLine.Contains($idneedle) -or $_.CommandLine.Contains($rootneedle)) }; $p | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
-      await new Promise(resolve => execFile('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], { windowsHide: true }, () => resolve()));
+      const script = `$marker='${marker}';$root='${rootNeedle}';$p=@(Get-CimInstance Win32_Process -Filter "Name='javaw.exe'")+@(Get-CimInstance Win32_Process -Filter "Name='java.exe'");$p|Where-Object{$_.CommandLine -and ($_.CommandLine.Contains($marker) -or $_.CommandLine.Contains($root))}|ForEach-Object{Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}`;
+      execFile('powershell.exe', ['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',script], { windowsHide:true, timeout:5000 }, () => {});
     } else {
-      await new Promise(resolve => execFile('pkill', ['-f', gameDir(id)], () => resolve()));
+      execFile('pkill', ['-f', gameDir(id)], () => {});
     }
   };
-  await killJava();
-  // 준비 단계에는 minecraft-java-core가 즉시 중단 API를 제공하지 않으므로 취소 플래그를 세우고,
-  // Java 프로세스가 생성되는 즉시 다시 강제 종료한다.
-  setTimeout(() => killJava().catch(() => {}), 700).unref?.();
-  setTimeout(() => killJava().catch(() => {}), 1800).unref?.();
-  return { ok: true, preparingCancelled: activeLauncher.state !== 'running' };
+  fallbackKill().catch(() => {});
+  setTimeout(() => fallbackKill().catch(() => {}), 450).unref?.();
+  setTimeout(() => fallbackKill().catch(() => {}), 1200).unref?.();
+
+  // 준비 중 다운로드 자체를 라이브러리에서 즉시 취소할 API는 없지만, 사용자 조작은 즉시 끝난 것으로 처리하고
+  // 뒤늦게 생성되는 Java 프로세스는 위의 marker로 바로 종료합니다.
+  if (launchRef.state !== 'running') {
+    send('launch-closed', { instanceId:id, cancelled:true });
+    emitLaunchState('idle', id, { cancelled:true });
+  }
+  return { ok: true, immediate: true, preparingCancelled: launchRef.state !== 'running' };
 });
 
 ipcMain.on('__easycraft-cancel-spawned-java', async (_event, id) => {
@@ -846,18 +955,20 @@ ipcMain.handle('launch-game', async (_event, id) => {
   let summary = accountSummary(currentAccount);
   if (!summary || !currentAccount) summary = await loadSavedAccount();
   if (!summary || !currentAccount) return { ok: false, needLogin: true, error: '먼저 Microsoft 계정으로 로그인해 주세요.' };
+  if (!(await ensureFreshAccountForLaunch())) return { ok:false, needLogin:true, error:'Microsoft 로그인 정보가 만료되었습니다. 다시 로그인해 주세요.' };
+  summary = accountSummary(currentAccount);
   const { config, instance: rawInstance } = await getInstance(id);
   if (!rawInstance) return { ok: false, error: '실행할 인스턴스를 찾을 수 없습니다.' };
   const instance = normalizeInstance(rawInstance, config.memory);
   await ensureInstanceFolders(id);
 
-  // 빠른 실행: 매번 네트워크 업데이트 검사를 기다리지 않습니다.
-  // 누락된 파일 복구는 실제 누락 파일이 있을 때만 네트워크를 사용합니다.
-  await repairManagedContent(id);
-
+  // 실행 버튼을 누른 뒤 Modrinth 네트워크 복구를 기다리지 않습니다. 콘텐츠 복구/업데이트는 별도 흐름에서 처리합니다.
   const root = gameDir(id);
-  const launcher = new Launch();
-  activeLauncher = { launcher, instanceId: id, state: 'preparing', cancelRequested: false };
+  const cacheKey = JSON.stringify({version:instance.version,loader:instance.loader,settings:instance.settings});
+  const cached = preparedLaunchers.get(id);
+  const canFastStart = !!cached && cached.key === cacheKey && await hasLaunchReadyMarker(id, instance);
+  const launcher = canFastStart ? cached.launcher : new Launch();
+  activeLauncher = { launcher, instanceId: id, state: 'preparing', cancelRequested: false, pid:null, fastStart:canFastStart };
   emitLaunchState('preparing', id, { name: instance.name });
   const loaderEnabled = instance.loader !== 'vanilla';
   const settings = instance.settings;
@@ -878,8 +989,8 @@ ipcMain.handle('launch-game', async (_event, id) => {
     detached: false,
     instance: null, // path 자체가 인스턴스 전용 .minecraft이므로 중복 instances/ 경로를 만들지 않습니다.
     verify: false, // 누락 파일은 core의 bundle 검사에서 복구되고, 매번 SHA-1 전체 검증은 하지 않습니다.
-    downloadFileMultiple: 12,
-    timeout: 30000,
+    downloadFileMultiple: 8,
+    timeout: 18000,
     ignored: ['mods', 'config', 'saves', 'resourcepacks', 'shaderpacks', 'screenshots', 'logs', 'options.txt'],
     loader: {
       enable: loaderEnabled,
@@ -893,70 +1004,100 @@ ipcMain.handle('launch-game', async (_event, id) => {
       height: settings.screen.height,
       fullscreen: !!settings.screen.fullscreen
     },
-    JVM_ARGS: splitArgsLines(settings.jvmArgs),
+    JVM_ARGS: [`-Deasycraft.instance=${safeId(id)}`, ...splitArgsLines(settings.jvmArgs)],
     GAME_ARGS: splitArgsLines(settings.gameArgs),
     memory: { min: `${settings.memory.min}G`, max: `${settings.memory.max}G` }
   };
 
-  const onLine = line => {
-    const text = String(line || '').trim();
-    if (!text) return;
-    if (text.startsWith('Launching with arguments')) {
-      if (activeLauncher?.instanceId === id && activeLauncher.cancelRequested) {
-        // stop-game이 준비 중 눌렸다면 Java가 뜨는 즉시 강제 종료 요청을 다시 실행한다.
-        ipcMain.emit('__easycraft-cancel-spawned-java', null, id);
-        return;
+  if (!launcher._easycraftListenersBound) {
+    launcher._easycraftListenersBound = true;
+    const onLine = line => {
+      const text = String(line || '').trim();
+      if (!text) return;
+      if (/Launching with arguments|Setting user:|LWJGL Version|Backend library|Starting Minecraft|Loading Minecraft/i.test(text)) {
+        if (activeLauncher?.instanceId === id && activeLauncher.cancelRequested) {
+          // stop-game이 준비 중 눌렸다면 Java가 뜨는 즉시 강제 종료 요청을 다시 실행한다.
+          ipcMain.emit('__easycraft-cancel-spawned-java', null, id);
+          return;
+        }
+        emitLaunchState('running', id, { name: instance.name });
+        send('launch-progress', { percent: 100, text: 'Minecraft 실행 중' });
+        captureEasyCraftJavaPid(id, activeLauncher);
+        writeLaunchReadyMarker(id, instance);
+        preparedLaunchers.set(id, { launcher, key: cacheKey });
       }
-      emitLaunchState('running', id, { name: instance.name });
-      send('launch-progress', { percent: 100, text: 'Minecraft 실행 중' });
-      writeLaunchReadyMarker(id, instance);
-    }
-    appendLauncherLog(id, text);
-  };
-  launcher.on('progress', (progress, total) => {
-    let pct = Number(progress);
-    if (Number(total) > 0 && Number(progress) > 1) pct = (Number(progress) / Number(total)) * 100;
-    if (!Number.isFinite(pct)) pct = 0;
-    send('launch-progress', { percent: Math.max(0, Math.min(99, pct)), text: '게임/Java/라이브러리 확인 및 다운로드 중…' });
-  });
-  launcher.on('extract', name => send('launch-progress', { text: `압축 해제: ${name}` }));
-  launcher.on('patch', text => { send('launch-progress', { text: String(text).trim().slice(0, 180) }); onLine(text); });
-  launcher.on('data', onLine);
-  launcher.on('error', err => {
-    const msg = launcherErrorMessage(err);
-    onLine(`ERROR ${msg}`);
-    send('launch-error', msg);
-    emitLaunchState('idle', id, { error: msg });
-    activeLauncher = null;
-  });
-  launcher.on('close', () => {
-    const wasCancelled = !!activeLauncher?.cancelRequested;
-    send('launch-closed', { instanceId: id });
-    emitLaunchState('idle', id);
-    activeLauncher = null;
-    // 게임 종료 후에만 콘텐츠 업데이트를 백그라운드에서 확인하여 다음 실행에 적용한다.
-    // 실행 직전 네트워크 대기를 없애고, 실행 중인 JAR 파일을 교체하는 위험도 피한다.
-    if (!wasCancelled && instance.settings.autoUpdateContent) {
-      setTimeout(async () => {
-        try {
-          const count = await updateAllManagedContent(id, instance);
-          if (count) send('content-progress', { text: `${count}개 콘텐츠 업데이트 완료 · 다음 실행에 적용됩니다.` });
-        } catch (error) { await appendLauncherLog(id, `POST-GAME CONTENT UPDATE ERROR ${error.message || error}`); }
-      }, 1000).unref?.();
-    }
-  });
-
-  try {
-    send('launch-progress', { percent: 2, text: `${instance.name} 준비 중…` });
-    await appendLauncherLog(id, `LAUNCH ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root} mods=${targetFolder(id, 'mods')}`);
-    launcher.Launch(opts).catch(error => {
-      const msg = launcherErrorMessage(error);
-      appendLauncherLog(id, `LAUNCH ASYNC ERROR ${msg}`);
+      appendLauncherLog(id, text);
+    };
+    launcher.on('progress', (progress, total) => {
+      let pct = Number(progress);
+      if (Number(total) > 0 && Number(progress) > 1) pct = (Number(progress) / Number(total)) * 100;
+      if (!Number.isFinite(pct)) pct = 0;
+      send('launch-progress', { percent: Math.max(0, Math.min(99, pct)), text: '게임/Java/라이브러리 확인 및 다운로드 중…' });
+    });
+    launcher.on('extract', name => send('launch-progress', { text: `압축 해제: ${name}` }));
+    launcher.on('patch', text => { send('launch-progress', { text: String(text).trim().slice(0, 180) }); onLine(text); });
+    launcher.on('data', onLine);
+    launcher.on('error', err => {
+      const msg = launcherErrorMessage(err);
+      onLine(`ERROR ${msg}`);
       send('launch-error', msg);
       emitLaunchState('idle', id, { error: msg });
       activeLauncher = null;
     });
-    return { ok: true };
+    launcher.on('close', () => {
+      const sameRun = activeLauncher?.launcher === launcher && activeLauncher?.instanceId === id;
+      const wasCancelled = sameRun ? !!activeLauncher?.cancelRequested : false;
+      if (sameRun) {
+        send('launch-closed', { instanceId: id });
+        emitLaunchState('idle', id);
+        activeLauncher = null;
+      }
+      // 게임 종료 후에만 콘텐츠 업데이트를 백그라운드에서 확인하여 다음 실행에 적용한다.
+      // 실행 직전 네트워크 대기를 없애고, 실행 중인 JAR 파일을 교체하는 위험도 피한다.
+      if (!wasCancelled && instance.settings.autoUpdateContent) {
+        setTimeout(async () => {
+          try {
+            const count = await updateAllManagedContent(id, instance);
+            if (count) send('content-progress', { text: `${count}개 콘텐츠 업데이트 완료 · 다음 실행에 적용됩니다.` });
+          } catch (error) { await appendLauncherLog(id, `POST-GAME CONTENT UPDATE ERROR ${error.message || error}`); }
+        }, 1000).unref?.();
+      }
+    });
+  }
+
+  try {
+    send('launch-progress', { percent: canFastStart ? 35 : 2, text: canFastStart ? `${instance.name} 빠른 실행 중…` : `${instance.name} 준비 중…` });
+    await appendLauncherLog(id, `LAUNCH ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root} fast=${canFastStart}`);
+    if (canFastStart && launcher.options) launcher.options.authenticator = currentAccount;
+    const launchPromise = canFastStart ? launcher.start() : launcher.Launch(opts);
+    Promise.resolve(launchPromise).then(result => {
+      const ref = activeLauncher;
+      if (!ref || ref.launcher !== launcher || ref.instanceId !== id) return;
+      if (ref.cancelRequested) {
+        captureEasyCraftJavaPid(id, ref);
+        setTimeout(() => ref.pid ? killPidFast(ref.pid) : null, 80).unref?.();
+        return;
+      }
+      if (result === false) throw new Error('Minecraft 실행 코어가 시작에 실패했습니다.');
+      // 4.x 코어의 Launch/start Promise가 정상 완료되면 Java 시작 단계까지 도달한 것으로 처리합니다.
+      if (ref.state === 'preparing') {
+        emitLaunchState('running', id, { name:instance.name });
+        send('launch-progress', { percent:100, text:'Minecraft 실행 중' });
+        writeLaunchReadyMarker(id, instance);
+        preparedLaunchers.set(id, { launcher, key:cacheKey });
+      }
+      captureEasyCraftJavaPid(id, ref);
+    }).catch(error => {
+      const msg = launcherErrorMessage(error);
+      appendLauncherLog(id, `LAUNCH ASYNC ERROR ${msg}`);
+      if (activeLauncher?.launcher === launcher) {
+        send('launch-error', msg);
+        emitLaunchState('idle', id, { error: msg });
+        activeLauncher = null;
+      }
+      preparedLaunchers.delete(id);
+    });
+    return { ok: true, fastStart: canFastStart };
   } catch (error) {
     activeLauncher = null;
     const msg = launcherErrorMessage(error);
