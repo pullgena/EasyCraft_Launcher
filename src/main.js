@@ -10,7 +10,7 @@ let mainWindow;
 let currentAccount = null;
 let activeLauncher = null;
 
-const APP_UA = 'EasyCraftLauncher/0.3.3 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.0 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -119,7 +119,7 @@ async function loadSavedAccount() {
 }
 async function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1240, height: 800, minWidth: 1000, minHeight: 650,
+    width: 1360, height: 860, minWidth: 1040, minHeight: 680,
     backgroundColor: '#0f1412', title: 'EasyCraft Launcher',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -856,19 +856,31 @@ ipcMain.handle('launch-game', async (_event, id) => {
   await repairManagedContent(id);
 
   const root = gameDir(id);
-  const quickLaunch = await hasLaunchReadyMarker(id, instance);
   const launcher = new Launch();
   activeLauncher = { launcher, instanceId: id, state: 'preparing', cancelRequested: false };
   emitLaunchState('preparing', id, { name: instance.name });
   const loaderEnabled = instance.loader !== 'vanilla';
   const settings = instance.settings;
+  if (settings.javaPath) {
+    try {
+      const st = await fsp.stat(settings.javaPath);
+      if (!st.isFile()) throw new Error('not-file');
+    } catch {
+      activeLauncher = null;
+      emitLaunchState('idle', id);
+      return { ok: false, error: '설정된 Java 경로를 찾을 수 없습니다. 인스턴스 설정에서 Java 경로를 비우고 자동 선택을 사용하거나 올바른 javaw.exe를 선택해 주세요.' };
+    }
+  }
   const opts = {
     path: root,
     authenticator: currentAccount,
     version: instance.version || 'latest_release',
     detached: false,
-    verify: !quickLaunch,
+    instance: null, // path 자체가 인스턴스 전용 .minecraft이므로 중복 instances/ 경로를 만들지 않습니다.
+    verify: false, // 누락 파일은 core의 bundle 검사에서 복구되고, 매번 SHA-1 전체 검증은 하지 않습니다.
+    downloadFileMultiple: 12,
     timeout: 30000,
+    ignored: ['mods', 'config', 'saves', 'resourcepacks', 'shaderpacks', 'screenshots', 'logs', 'options.txt'],
     loader: {
       enable: loaderEnabled,
       type: loaderEnabled ? instance.loader : null,
@@ -1016,7 +1028,6 @@ async function checkForLauncherUpdate({ manual = false } = {}) {
   if (['checking', 'downloading', 'downloaded'].includes(launcherUpdateState.state)) return { ok: true, skipped: true };
   try {
     setLauncherUpdateState({ state: 'checking', percent: 0, error: null });
-    await githubUpdatePreflight(updateRepository);
     await autoUpdaterInstance.checkForUpdates();
     return { ok: true };
   } catch (error) {
@@ -1026,8 +1037,8 @@ async function checkForLauncherUpdate({ manual = false } = {}) {
   }
 }
 function scheduleAutomaticUpdateChecks() {
-  // UI가 뜬 뒤 조용히 검사합니다. '확인 중' 상태는 오른쪽 위 팝업을 띄우지 않습니다.
-  const first = setTimeout(() => checkForLauncherUpdate().catch(() => {}), 2500);
+  // 첫 화면이 뜬 직후 업데이트를 검사합니다. 새 버전이 있을 때만 선택 화면을 보여줍니다.
+  const first = setTimeout(() => checkForLauncherUpdate().catch(() => {}), 900);
   first.unref?.();
 
   // 오래 켜 둔 경우 4시간마다 다시 확인합니다.
@@ -1053,16 +1064,17 @@ function initAutoUpdater() {
 
     const { autoUpdater } = require('electron-updater');
     autoUpdaterInstance = autoUpdater;
-    autoUpdater.autoDownload = true;
+    // electron-builder가 패키징 때 생성한 app-update.yml을 그대로 사용합니다.
+    // 공식 권장 방식대로 setFeedURL을 직접 덮어쓰지 않습니다.
+    autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = true;
     autoUpdater.allowPrerelease = false;
-    autoUpdater.setFeedURL({ provider: 'github', owner, repo });
 
     setLauncherUpdateState({ state: 'idle', repository: updateRepository, error: null });
     // checking-for-update is intentionally not forced into a popup in the renderer.
     autoUpdater.on('checking-for-update', () => setLauncherUpdateState({ state: 'checking', percent: 0, error: null }));
-    autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0, error: null }));
-    autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0, error: null }));
+    autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0, error: null, startupPrompt: true }));
+    autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0, error: null, startupPrompt: false }));
     autoUpdater.on('download-progress', p => setLauncherUpdateState({ state: 'downloading', percent: Math.round(p.percent || 0), error: null }));
     autoUpdater.on('update-downloaded', info2 => setLauncherUpdateState({ state: 'downloaded', availableVersion: info2.version, percent: 100, error: null }));
     autoUpdater.on('error', error => setLauncherUpdateState({ state: 'error', error: friendlyUpdateError(error) }));

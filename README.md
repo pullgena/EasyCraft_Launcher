@@ -1,32 +1,36 @@
-# EasyCraft Launcher 0.3.3
+# EasyCraft Launcher 0.4.0
 
 Windows용 Minecraft Java Edition 런처입니다.
 
-## 핵심 기능
+## 주요 기능
 
-- Minecraft 인스턴스별 독립 mods / saves / resourcepacks / shaderpacks
-- 한글을 포함한 Unicode 인스턴스 이름
-- Vanilla / Fabric / Forge / NeoForge / Quilt
-- Modrinth 프로그램 내 검색 및 설치
-- 필수 모드 의존성 설치 전 사용자 확인
-- Iris 설치 시에만 셰이더 UI 표시
-- 인스턴스별 RAM / 해상도 / Java / JVM 설정
-- 빠른 재실행 최적화
-- 준비 중/실행 중 Minecraft 중지
-- GitHub Releases 기반 EasyCraft 자동 업데이트
+- 인스턴스별 Minecraft 버전 / Vanilla / Fabric / Forge / NeoForge / Quilt
+- 인스턴스별 mods / saves / resourcepacks / shaderpacks 분리
+- 한글 인스턴스 이름
+- Microsoft 로그인 / 로그아웃
+- Modrinth 프로그램 내 검색 / 설치 / 제거 / 업데이트
+- 필수 의존 모드 설치 전 사용자 확인
+- Iris가 실제로 설치된 경우에만 셰이더 UI 표시
+- 인스턴스별 RAM / 해상도 / 전체화면 / Java / JVM 설정
+- 준비 중 및 실행 중 Minecraft 중지
+- 앱 시작 시 업데이트 확인 후 `업데이트` / `나중에` 선택
+- GitHub Releases 기반 자동 업데이트
 
 ## Windows EXE 빌드
 
-GitHub Actions에서 `Build Windows EXE` 워크플로를 실행하거나 `BUILD_EXE.bat`을 실행하세요.
+GitHub Actions의 `Build Windows EXE`를 실행하거나 Windows PC에서 `BUILD_EXE.bat`을 실행하세요.
 
-일반 main 빌드는 Artifact만 만들고, `v0.3.3` 같은 태그 빌드는 GitHub Release에 자동 업데이트용 `latest.yml`, 설치 EXE, blockmap을 게시합니다.
+일반 main 빌드는 Artifact만 생성합니다. `v0.4.0` 같은 태그 빌드는 GitHub Release에 다음 자동 업데이트 파일을 게시합니다.
 
-## 자동 업데이트
+- `EasyCraft-Launcher-Setup-0.4.0.exe`
+- `EasyCraft-Launcher-Setup-0.4.0.exe.blockmap`
+- `latest.yml`
 
-`package.json` 버전과 Git 태그를 맞추세요.
+## 업데이트 배포
 
-- package.json: `0.3.3`
-- GitHub tag: `v0.3.3`
+`package.json`의 버전과 Git 태그를 동일하게 맞추세요.
 
-저장소는 일반 사용자 자동 업데이트를 위해 Public 저장소로 사용하는 것을 권장합니다.
-Windows용 Minecraft Java 런처입니다. 인스턴스별 설정, Modrinth 검색/설치/업데이트, Microsoft 로그인, 자동 업데이트를 지원합니다.
+- package.json: `0.4.0`
+- GitHub tag: `v0.4.0`
+
+Release는 Draft/Pre-release가 아닌 Published 상태로 배포하는 것을 권장합니다.
