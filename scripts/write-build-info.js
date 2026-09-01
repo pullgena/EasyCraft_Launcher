@@ -11,10 +11,12 @@ function repositoryFromRemote() {
 }
 
 const repository = process.env.GITHUB_REPOSITORY || repositoryFromRemote();
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 const out = {
   repository,
   builtAt: new Date().toISOString(),
-  updateChannel: 'latest'
+  updateChannel: 'latest',
+  version: pkg.version
 };
 fs.writeFileSync(path.join(__dirname, '..', 'src', 'build-info.json'), JSON.stringify(out, null, 2));
 console.log(`Build info repository: ${repository || '(not detected)'}`);

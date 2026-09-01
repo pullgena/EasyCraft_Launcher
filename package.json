@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.1",
-  "description": "EasyCraft Launcher 0.4.1 - faster Minecraft launch/stop, Minecraft skin avatar, installed Modrinth icons, and cleaner launcher UI",
+  "version": "0.4.3",
+  "description": "EasyCraft Launcher 0.4.3 - instant Modrinth discovery and isolated Minecraft launch worker for faster, more reliable startup",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
@@ -24,8 +24,12 @@
     "productName": "EasyCraft Launcher",
     "asar": true,
     "asarUnpack": [
+      "src/minecraft-worker.js",
       "node_modules/minecraft-java-core/**",
-      "node_modules/7zip-bin/**"
+      "node_modules/7zip-bin/**",
+      "node_modules/prompt/**",
+      "node_modules/semver/**",
+      "node_modules/tslib/**"
     ],
     "files": [
       "src/**/*",

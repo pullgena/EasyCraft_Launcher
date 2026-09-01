@@ -52,7 +52,7 @@
         <div class="instance-grid" id="instanceGrid"></div>
 
         <div class="quick-grid">
-          <button class="quick-card" data-content="mods"><span class="quick-icon">M</span><div><strong>모드 찾아보기</strong><p>현재 버전과 로더에 맞는 Modrinth 모드만 검색합니다.</p></div><span>→</span></button>
+          <button class="quick-card" data-content="mods"><span class="quick-icon">M</span><div><strong>모드 찾아보기</strong><p>현재 버전과 로더에 맞는 인기 Modrinth 모드를 바로 보여줍니다.</p></div><span>→</span></button>
           <button class="quick-card" data-content="resourcepacks"><span class="quick-icon">R</span><div><strong>리소스팩 찾아보기</strong><p>다운로드 없이 런처 안에서 바로 설치합니다.</p></div><span>→</span></button>
           <button class="quick-card hidden" id="shaderQuick" data-content="shaderpacks"><span class="quick-icon">S</span><div><strong>셰이더 찾아보기</strong><p>Iris가 설치되어 있어 사용할 수 있습니다.</p></div><span>→</span></button>
         </div>
@@ -68,10 +68,10 @@
 
         <div class="content-layout">
           <section class="market-panel panel">
-            <div class="panel-title"><div><h3>Modrinth에서 찾기</h3><p>호환되는 콘텐츠만 검색됩니다.</p></div></div>
+            <div class="panel-title"><div><h3>Modrinth에서 찾기</h3><p>검색하지 않아도 호환되는 인기 콘텐츠가 바로 표시됩니다.</p></div></div>
             <div class="search-row"><input id="searchInput" class="input" placeholder="검색어를 입력하세요. 예: Sodium, Iris, JEI" /><button class="btn primary" id="searchBtn">검색</button></div>
             <div class="update-strip hidden" id="contentUpdateStrip"><span id="contentUpdateText"></span><button class="btn primary small" id="updateAllContentBtn">모두 업데이트</button></div>
-            <div class="result-list" id="searchResults"><div class="empty">검색하면 이곳에 설치 가능한 콘텐츠가 표시됩니다.</div></div>
+            <div class="result-list" id="searchResults"><div class="empty">Modrinth 인기 콘텐츠를 불러오는 중…</div></div>
           </section>
 
           <aside class="installed-panel panel">

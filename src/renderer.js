@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.1',
+  appVersion: '0.4.3',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -33,7 +33,7 @@ function switchView(view) {
     settings:['SETTINGS','EasyCraft와 인스턴스를 내 방식대로 설정하세요']
   }[view];
   $('#pageKicker').textContent = copy[0]; $('#pageTitle').textContent = copy[1];
-  if (view === 'content') { refreshCapabilities().then(() => renderContent()); }
+  if (view === 'content') { refreshCapabilities().then(async () => { await renderContent(); await searchContent(); }); }
   if (view === 'settings') renderSettings();
 }
 
@@ -211,7 +211,7 @@ $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editin
 $('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
 $('#openInstanceFolderBtn').addEventListener('click',()=>{const i=currentInstance();if(i)api.openInstanceFolder(i.id);});$('#settingsOpenFolderBtn').addEventListener('click',()=>{const i=currentInstance();if(i)api.openInstanceFolder(i.id);});
-$$('.content-tab').forEach(b=>b.addEventListener('click',async()=>{state.contentType=b.dataset.type;$$('.content-tab').forEach(x=>x.classList.toggle('active',x===b));state.searchResults=[];$('#searchInput').value='';await renderContent();$('#searchResults').innerHTML='<div class="empty">검색하면 이곳에 설치 가능한 콘텐츠가 표시됩니다.</div>'; }));
+$$('.content-tab').forEach(b=>b.addEventListener('click',async()=>{state.contentType=b.dataset.type;$$('.content-tab').forEach(x=>x.classList.toggle('active',x===b));state.searchResults=[];$('#searchInput').value='';await renderContent();await searchContent();}));
 $('#searchBtn').addEventListener('click',searchContent);$('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchContent();});$('#contentFolderBtn').addEventListener('click',()=>{const i=currentInstance();if(i)api.openContentFolder(i.id,state.contentType);});$('#pickLocalContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const r=await api.pickContent(i.id,state.contentType);if(r.added?.length)toast(`${r.added.length}개 파일을 추가했습니다.`);await refreshCapabilities();await renderContent();});$('#contentUpdatesBtn').addEventListener('click',()=>checkContentUpdates(true));$('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const btn=$('#updateAllContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateAll(i.id);btn.disabled=false;btn.textContent='모두 업데이트';if(!r.ok)return toast(r.error||'업데이트 실패',true);toast(`${r.count||0}개 콘텐츠를 업데이트했습니다.`);$('#contentUpdateStrip').classList.add('hidden');await refreshCapabilities();await renderContent();});
 $('#manualUpdateCheckBtn').addEventListener('click',async()=>{const r=await api.checkLauncherUpdate();if(!r.ok)toast(r.error||'업데이트 확인 실패',true);});
 $('#settingsUpdateActionBtn').addEventListener('click',async()=>{const action=$('#settingsUpdateActionBtn').dataset.action;const r=action==='install'?await api.installLauncherUpdate():await api.downloadLauncherUpdate();if(!r.ok)toast(r.error||'업데이트 처리 실패',true);});
@@ -228,7 +228,7 @@ api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.1';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.3';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
   $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
   renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
   const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';
