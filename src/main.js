@@ -5,6 +5,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const crypto = require('crypto');
 const { Launch, Microsoft } = require('minecraft-java-core');
+const AdmZip = require('adm-zip');
 
 let mainWindow;
 let currentAccount = null;
@@ -12,12 +13,13 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.8 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.9 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
   resourcepacks: { folder: 'resourcepacks', extensions: ['.zip'], projectType: 'resourcepack' },
-  shaderpacks: { folder: 'shaderpacks', extensions: ['.zip'], projectType: 'shader' }
+  shaderpacks: { folder: 'shaderpacks', extensions: ['.zip'], projectType: 'shader' },
+  modpacks: { folder: 'modpacks', extensions: ['.mrpack'], projectType: 'modpack' }
 };
 
 function dataDir() { return path.join(app.getPath('userData'), 'launcher-data'); }
@@ -289,6 +291,7 @@ async function ensureInstanceFolders(id) {
     fsp.mkdir(path.join(root, 'mods'), { recursive: true }),
     fsp.mkdir(path.join(root, 'resourcepacks'), { recursive: true }),
     fsp.mkdir(path.join(root, 'shaderpacks'), { recursive: true }),
+    fsp.mkdir(path.join(root, 'modpacks'), { recursive: true }),
     fsp.mkdir(path.join(root, 'saves'), { recursive: true }),
     fsp.mkdir(logsDir(id), { recursive: true })
   ]);
@@ -492,7 +495,7 @@ async function addContentFiles(id, type, filePaths) {
 }
 ipcMain.handle('pick-content', async (_event, id, type) => {
   validateContentType(type);
-  const filters = type === 'mods' ? [{ name: 'Minecraft Mods', extensions: ['jar'] }] : [{ name: 'ZIP files', extensions: ['zip'] }];
+  const filters = type === 'mods' ? [{ name: 'Minecraft Mods', extensions: ['jar'] }] : type === 'modpacks' ? [{ name: 'Modrinth Modpacks', extensions: ['mrpack'] }] : [{ name: 'ZIP files', extensions: ['zip'] }];
   const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'], filters });
   if (result.canceled) return { ok: true, added: [], skipped: [] };
   return { ok: true, ...(await addContentFiles(id, type, result.filePaths)) };
@@ -543,7 +546,10 @@ ipcMain.handle('list-content', async (_event, id, type) => {
       title: managed?.title || null,
       versionNumber: managed?.versionNumber || null,
       autoDependency: !!managed?.autoDependency,
-      iconUrl: managed?.iconUrl || null
+      iconUrl: managed?.iconUrl || null,
+      projectType: managed?.projectType || meta.projectType,
+      slug: managed?.slug || null,
+      description: managed?.description || null
     };
   }).sort((a, b) => (a.title || a.displayName).localeCompare(b.title || b.displayName));
 });
@@ -560,6 +566,15 @@ ipcMain.handle('toggle-content', async (_event, id, type, name) => {
 
 async function deleteRegistryFile(id, record) {
   if (!record) return;
+  if (record.projectType === 'modpack' && Array.isArray(record.packFiles)) {
+    const root = path.resolve(gameDir(id));
+    for (const rel of record.packFiles) {
+      try {
+        const target = path.resolve(root, String(rel || ''));
+        if (target !== root && target.startsWith(root + path.sep)) await fsp.rm(target, { force: true, recursive: false }).catch(() => {});
+      } catch {}
+    }
+  }
   const file = path.join(gameDir(id), record.folder, record.fileName);
   await fsp.rm(file, { force: true }).catch(() => {});
   await fsp.rm(`${file}.disabled`, { force: true }).catch(() => {});
@@ -785,6 +800,29 @@ ipcMain.handle('modrinth-search', async (_event, id, type, query) => {
   } catch (error) { return { ok: false, error: error.message }; }
 });
 
+
+ipcMain.handle('modrinth-project-detail', async (_event, id, projectId) => {
+  try {
+    const { instance } = await getInstance(id);
+    if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
+    const project = await getProject(projectId);
+    const registry = await readRegistry(id);
+    const rec = registry.find(x => x.projectId === projectId) || null;
+    const installed = !!rec && await recordFileExists(id, rec);
+    let latest = null;
+    try { latest = (await compatibleVersions(instance, projectId, project.project_type))[0] || null; } catch {}
+    return { ok: true, detail: {
+      projectId: project.id, slug: project.slug, title: project.title, description: project.description || '',
+      iconUrl: project.icon_url || null, projectType: project.project_type, downloads: project.downloads || 0,
+      followers: project.followers || 0, categories: project.categories || [],
+      license: project.license?.name || project.license?.id || '', clientSide: project.client_side || '', serverSide: project.server_side || '',
+      installed, currentVersion: rec?.versionNumber || null, latestVersion: latest?.version_number || null,
+      updateAvailable: !!(installed && latest && rec?.versionId && latest.id !== rec.versionId),
+      autoDependency: !!rec?.autoDependency
+    }};
+  } catch (error) { return { ok: false, error: error.message }; }
+});
+
 async function getProject(projectId) { return fetchJson(`${MODRINTH_API}/project/${encodeURIComponent(projectId)}`); }
 async function getVersion(versionId) { return fetchJson(`${MODRINTH_API}/version/${encodeURIComponent(versionId)}`); }
 async function compatibleVersions(instance, projectId, projectType) {
@@ -804,6 +842,7 @@ function contentTypeForProject(projectType) {
   if (projectType === 'mod') return 'mods';
   if (projectType === 'resourcepack') return 'resourcepacks';
   if (projectType === 'shader') return 'shaderpacks';
+  if (projectType === 'modpack') return 'modpacks';
   throw new Error(`지원하지 않는 Modrinth 프로젝트 종류: ${projectType}`);
 }
 async function downloadFile(url, destination, hashes) {
@@ -827,6 +866,84 @@ function collisionSafeFileName(registry, projectId, filename) {
   if (!collision) return filename;
   const ext = path.extname(filename), base = path.basename(filename, ext);
   return `${base}-${projectId}${ext}`;
+}
+
+function safePackRelativePath(value) {
+  const raw = String(value || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  const normalized = path.posix.normalize(raw);
+  if (!normalized || normalized === '.' || normalized.startsWith('../') || normalized.includes('/../') || path.posix.isAbsolute(normalized)) throw new Error(`안전하지 않은 모드팩 경로: ${value}`);
+  return normalized.split('/').join(path.sep);
+}
+async function runPool(items, concurrency, worker) {
+  let cursor = 0;
+  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, items.length || 1)) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) break;
+      await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+}
+async function applyModpackArchive(id, instance, archivePath, projectTitle) {
+  const zip = new AdmZip(archivePath);
+  const indexEntry = zip.getEntry('modrinth.index.json');
+  if (!indexEntry) throw new Error(`${projectTitle}: modrinth.index.json을 찾을 수 없습니다.`);
+  let index;
+  try { index = JSON.parse(indexEntry.getData().toString('utf8')); } catch { throw new Error(`${projectTitle}: 모드팩 정보를 읽을 수 없습니다.`); }
+  if (!index || Number(index.formatVersion) !== 1) throw new Error(`${projectTitle}: 지원하지 않는 Modrinth 모드팩 형식입니다.`);
+
+  const root = path.resolve(gameDir(id));
+  const installedPaths = [];
+  const files = Array.isArray(index.files) ? index.files.filter(f => f?.env?.client !== 'unsupported') : [];
+  let completed = 0;
+  await runPool(files, 5, async file => {
+    const rel = safePackRelativePath(file.path);
+    const destination = path.resolve(root, rel);
+    if (!destination.startsWith(root + path.sep)) throw new Error('모드팩 파일 경로가 게임 폴더 밖을 가리킵니다.');
+    const url = Array.isArray(file.downloads) ? file.downloads[0] : null;
+    if (!url) throw new Error(`${file.path}: 다운로드 주소가 없습니다.`);
+    await downloadFile(url, destination, file.hashes || {});
+    installedPaths.push(rel);
+    completed++;
+    if (completed === files.length || completed % 8 === 0) send('content-progress', { text: `${projectTitle} 적용 중 · ${completed}/${files.length}` });
+  });
+
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) continue;
+    const name = String(entry.entryName || '').replace(/\\/g, '/');
+    let rel = null;
+    if (name.startsWith('overrides/')) rel = name.slice('overrides/'.length);
+    else if (name.startsWith('client-overrides/')) rel = name.slice('client-overrides/'.length);
+    if (!rel) continue;
+    rel = safePackRelativePath(rel);
+    const destination = path.resolve(root, rel);
+    if (!destination.startsWith(root + path.sep)) continue;
+    await fsp.mkdir(path.dirname(destination), { recursive: true });
+    await fsp.writeFile(destination, entry.getData());
+    installedPaths.push(rel);
+  }
+
+  const deps = index.dependencies || {};
+  const previousVersion = instance.version;
+  const previousLoader = instance.loader;
+  const previousLoaderVersion = instance.loaderVersion;
+  if (deps.minecraft) instance.version = String(deps.minecraft);
+  const loaderOrder = [['fabric-loader','fabric'],['quilt-loader','quilt'],['neoforge','neoforge'],['forge','forge']];
+  const picked = loaderOrder.find(([key]) => deps[key]);
+  if (picked) { instance.loader = picked[1]; instance.loaderVersion = String(deps[picked[0]] || 'latest'); }
+  else { instance.loader = 'vanilla'; instance.loaderVersion = null; }
+  if (instance.version !== previousVersion || instance.loader !== previousLoader || instance.loaderVersion !== previousLoaderVersion) {
+    const config = await readConfig();
+    const target = config.instances.find(x => x.id === id);
+    if (target) {
+      target.version = instance.version; target.loader = instance.loader; target.loaderVersion = instance.loaderVersion;
+      target.settings = { ...defaultInstanceSettings(), ...(target.settings || {}), autoUpdateMinecraftVersion: false, autoUpdateLoaderVersion: false };
+      await writeConfig(config);
+    }
+    await invalidateLoaderInstall(id);
+  }
+  return { packFiles: [...new Set(installedPaths)], indexName: index.name || projectTitle, indexVersionId: index.versionId || null };
 }
 async function resolveInstallCandidate(instance, projectId, specificVersionId = null) {
   const project = await getProject(projectId);
@@ -905,6 +1022,29 @@ async function installProjectInternal(id, instance, projectId, options = {}, see
   if (!file) throw new Error(`${project.title}: 다운로드할 파일이 없습니다.`);
 
   let registry = await readRegistry(id);
+  if (projectType === 'modpack') {
+    const folder = validateContentType('modpacks').folder;
+    const existing = registry.find(x => x.projectId === projectId);
+    const fileName = collisionSafeFileName(registry, projectId, path.basename(file.filename));
+    const destination = path.join(gameDir(id), folder, fileName);
+    await fsp.mkdir(path.dirname(destination), { recursive: true });
+    send('content-progress', { projectId, text: `${project.title} 모드팩 다운로드 중…` });
+    await downloadFile(file.url, destination, file.hashes);
+    const applied = await applyModpackArchive(id, instance, destination, project.title);
+    const newFiles = new Set(applied.packFiles || []);
+    if (existing?.packFiles) {
+      const root = path.resolve(gameDir(id));
+      for (const rel of existing.packFiles) {
+        if (newFiles.has(rel)) continue;
+        try { const target = path.resolve(root, rel); if (target.startsWith(root + path.sep)) await fsp.rm(target, { force: true }).catch(() => {}); } catch {}
+      }
+      if (existing.fileName && existing.fileName !== fileName) await fsp.rm(path.join(gameDir(id), existing.folder, existing.fileName), { force: true }).catch(() => {});
+    }
+    registry = registry.filter(x => x.projectId !== projectId);
+    registry.push({ projectId, title: project.title, description: project.description || '', slug: project.slug, iconUrl: project.icon_url || null, projectType, versionId: version.id, versionNumber: version.version_number, fileName, folder, hashes: file.hashes || {}, installedAt: new Date().toISOString(), autoDependency: false, parents: [], disabled: false, packFiles: applied.packFiles || [], packName: applied.indexName || project.title });
+    await writeRegistry(id, registry);
+    return { project, version };
+  }
   const existing = registry.find(x => x.projectId === projectId);
   const rootProjectId = options.rootProjectId || projectId;
   if (existing && existing.versionId === version.id) {
@@ -940,7 +1080,7 @@ async function installProjectInternal(id, instance, projectId, options = {}, see
     }
     registry = registry.filter(x => x.projectId !== projectId);
     registry.push({
-      projectId, title: project.title, slug: project.slug, iconUrl: project.icon_url || null, projectType,
+      projectId, title: project.title, description: project.description || '', slug: project.slug, iconUrl: project.icon_url || null, projectType,
       versionId: version.id, versionNumber: version.version_number,
       fileName, folder, hashes: file.hashes || {}, installedAt: new Date().toISOString(),
       autoDependency: options.autoDependency ? (existing ? existing.autoDependency : true) : false,
@@ -983,7 +1123,7 @@ ipcMain.handle('modrinth-install', async (_event, id, projectId, allowDependenci
     }
     const result = await installProjectInternal(id, instance, projectId, { rootProjectId: projectId, autoDependency: false });
     send('content-progress', { projectId, text: `${result.project.title} 설치 완료` });
-    return { ok: true, title: result.project.title, version: result.version.version_number };
+    return { ok: true, title: result.project.title, version: result.version.version_number, config: await readConfig() };
   } catch (error) { return { ok: false, error: error.message }; }
 });
 ipcMain.handle('modrinth-uninstall', async (_event, id, projectId) => uninstallManagedProject(id, projectId));
@@ -1024,7 +1164,7 @@ ipcMain.handle('modrinth-update', async (_event, id, projectId) => {
   try {
     const { instance } = await getInstance(id); if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
     await updateManagedRoot(id, instance, projectId);
-    return { ok: true };
+    return { ok: true, config: await readConfig() };
   } catch (error) { return { ok: false, error: error.message }; }
 });
 async function updateAllManagedContent(id, instance, type = null) {
@@ -1053,13 +1193,13 @@ ipcMain.handle('modrinth-update-batch', async (_event, id, projectIds) => {
       await updateManagedRoot(id, instance, projectId);
       count++;
     }
-    return { ok: true, count, checked };
+    return { ok: true, count, checked, config: await readConfig() };
   } catch (error) { return { ok: false, error: error.message }; }
 });
 ipcMain.handle('modrinth-update-all', async (_event, id, type = null) => {
   try {
     const { instance } = await getInstance(id); if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
-    return { ok: true, count: await updateAllManagedContent(id, instance, type) };
+    return { ok: true, count: await updateAllManagedContent(id, instance, type), config: await readConfig() };
   } catch (error) { return { ok: false, error: error.message }; }
 });
 

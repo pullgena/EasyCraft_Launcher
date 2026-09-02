@@ -27,7 +27,7 @@
 
     <section class="shell">
       <header class="floating-header">
-        <div>
+        <div id="pageHeading">
           <span class="kicker" id="pageKicker">EASYCRAFT PLAY</span>
           <h1 id="pageTitle">Minecraft를 시작하세요</h1>
         </div>
@@ -45,6 +45,7 @@
             <div class="instance-label" id="heroBadge">새 인스턴스를 만들어 시작하세요</div>
             <h2 class="hero-title" id="heroName">Minecraft를 준비해 볼까요?</h2>
             <p class="hero-meta" id="heroMeta">버전과 로더를 고르고, 원하는 모드를 바로 설치해 플레이할 수 있습니다.</p>
+            <div class="hero-launch-state hidden" id="heroLaunchState"><span class="hero-launch-dot"></span><strong id="heroLaunchStateText">EasyCraft Launcher로 실행됨</strong></div>
             <button class="play-main" id="playBtn"><span class="play-symbol">▶</span><span>게임 실행</span></button>
             <div class="hero-links">
               <button id="heroSettingsBtn">인스턴스 설정</button>
@@ -57,6 +58,7 @@
             <button class="quick-card" data-content="mods"><b>MODS</b><span>모드 찾기</span><i>→</i></button>
             <button class="quick-card" data-content="resourcepacks"><b>PACKS</b><span>리소스팩</span><i>→</i></button>
             <button class="quick-card hidden" id="shaderQuick" data-content="shaderpacks"><b>SHADERS</b><span>셰이더</span><i>→</i></button>
+            <button class="quick-card" data-content="modpacks"><b>MODPACKS</b><span>모드팩</span><i>→</i></button>
           </div>
 
           <div class="profiles-dock">
@@ -78,12 +80,13 @@
             <button class="content-tab active" data-type="mods">모드</button>
             <button class="content-tab" data-type="resourcepacks">리소스팩</button>
             <button class="content-tab hidden" id="shaderTab" data-type="shaderpacks">셰이더</button>
+            <button class="content-tab" data-type="modpacks">모드팩</button>
           </div>
 
           <div class="library-flow">
             <section class="market-panel">
               <div class="library-title"><div><h3>Modrinth에서 찾기</h3><p>호환되는 인기 콘텐츠를 바로 보여드립니다.</p></div></div>
-              <div class="search-row"><input id="searchInput" class="input search-input" placeholder="모드 이름 검색" /><button id="searchBtn" class="search-submit">검색</button></div>
+              <div class="search-row"><span class="search-mark">⌕</span><input id="searchInput" class="input search-input" placeholder="입력하면 자동으로 검색됩니다" /><span class="search-live" id="searchLiveStatus">자동 검색</span></div>
               <div class="update-strip hidden" id="contentUpdateStrip"><span id="contentUpdateText"></span></div>
               <div class="result-list" id="searchResults"><div class="empty">Modrinth 인기 콘텐츠를 불러오는 중…</div></div>
             </section>
@@ -176,10 +179,31 @@
 
   <div class="modal hidden" id="dependencyModal">
     <div class="modal-card dependency-card">
-      <div class="modal-head"><div><span class="setting-label">REQUIRED MODS</span><h2>필수 모드가 필요해요</h2></div><button class="close-btn" id="dependencyCloseBtn">×</button></div>
+      <div class="modal-head"><div><span class="setting-label">REQUIRED MODS</span><h2>필수 모드가 필요해요</h2></div></div>
       <p class="dependency-message" id="dependencyMessage"></p>
       <div class="dependency-list" id="dependencyList"></div>
-      <div class="modal-actions"><button class="btn subtle" id="dependencyCancelBtn">아니요</button><button class="btn primary dependency-yes" id="dependencyConfirmBtn">예, 같이 설치</button></div>
+      <div class="modal-actions"><button class="btn subtle" id="dependencyCancelBtn">아니요</button><button class="btn primary dependency-yes" id="dependencyConfirmBtn">예</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="contentDetailModal">
+    <div class="modal-card content-detail-card">
+      <div class="modal-head"><div><span class="setting-label" id="contentDetailKind">MODRINTH</span><h2 id="contentDetailTitle">콘텐츠 정보</h2></div><button class="close-btn" data-close="contentDetailModal">×</button></div>
+      <div class="content-detail-hero">
+        <img class="content-detail-icon hidden" id="contentDetailIcon" alt="" />
+        <div class="content-detail-placeholder" id="contentDetailPlaceholder">◇</div>
+        <div class="content-detail-summary"><div class="detail-status" id="contentDetailStatus">확인 중</div><p id="contentDetailDescription">정보를 불러오고 있습니다.</p></div>
+      </div>
+      <div class="content-detail-meta" id="contentDetailMeta"></div>
+      <div class="modal-actions" id="contentDetailActions"><button class="btn subtle" data-close="contentDetailModal">닫기</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="confirmModal">
+    <div class="modal-card confirm-card">
+      <div class="modal-head"><div><span class="setting-label">EASYCRAFT</span><h2 id="confirmTitle">확인</h2></div></div>
+      <p class="confirm-message" id="confirmMessage"></p>
+      <div class="modal-actions"><button class="btn subtle" id="confirmNoBtn">아니요</button><button class="btn primary" id="confirmYesBtn">예</button></div>
     </div>
   </div>
 

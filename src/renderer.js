@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.8',
+  appVersion: '0.4.9',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -16,12 +16,15 @@ const state = {
   editingInstanceId: null,
   searchResults: [],
   installedItems: [],
-  selectedContent: new Set()
+  selectedContent: new Set(),
+  detailItem: null
 };
 
 function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function currentInstance() { return state.config.instances.find(i => i.id === state.config.selectedInstanceId) || null; }
 function loaderLabel(v) { return ({vanilla:'Vanilla',fabric:'Fabric',forge:'Forge',neoforge:'NeoForge',quilt:'Quilt'})[v] || v || 'Vanilla'; }
+function contentTypeLabel(v=state.contentType) { return ({mods:'모드',resourcepacks:'리소스팩',shaderpacks:'셰이더',modpacks:'모드팩'})[v] || '콘텐츠'; }
+function contentKindLabel(v) { return ({mod:'모드',resourcepack:'리소스팩',shader:'셰이더',modpack:'모드팩'})[v] || '콘텐츠'; }
 function toast(message, error=false) {
   const el = $('#toast'); el.textContent = message; el.classList.toggle('error', error); el.classList.remove('hidden');
   clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.add('hidden'), error ? 5000 : 2800);
@@ -35,6 +38,7 @@ function switchView(view) {
     settings:['EASYCRAFT SETTINGS','런처와 인스턴스를 관리하세요']
   }[view];
   $('#pageKicker').textContent = copy[0]; $('#pageTitle').textContent = copy[1];
+  syncContentHeaderFade(view === 'content' ? $('#view-content').scrollTop : 0, view === 'content');
   if (view === 'content') { refreshCapabilities().then(async () => { await renderContent(); await searchContent(); }); }
   if (view === 'settings') renderSettings();
 }
@@ -69,6 +73,15 @@ function renderHero() {
   $('#settingsInstanceBtn').disabled = !inst;
   $('#settingsOpenFolderBtn').disabled = !inst;
   renderPlayButton();
+  renderHomeLaunchState();
+}
+function renderHomeLaunchState(){
+  const el=$('#heroLaunchState'), text=$('#heroLaunchStateText');
+  if(!el||!text)return;
+  if(state.launchState==='running'){el.classList.remove('hidden');el.dataset.state='running';text.textContent='EasyCraft Launcher로 실행됨';}
+  else if(state.launchState==='preparing'){el.classList.remove('hidden');el.dataset.state='preparing';text.textContent='EasyCraft Launcher에서 Minecraft 준비 중';}
+  else if(state.launchState==='stopping'){el.classList.remove('hidden');el.dataset.state='stopping';text.textContent='Minecraft 종료 중';}
+  else{el.classList.add('hidden');delete el.dataset.state;}
 }
 function renderPlayButton() {
   const btn = $('#playBtn');
@@ -189,7 +202,7 @@ async function launchOrStop() {
 function showLaunchPop(title,text,percent=null,showStop=true){ const el=$('#launchPop'); el.classList.remove('hidden'); $('#launchPopTitle').textContent=title; $('#launchPopText').textContent=text||''; if(percent!==null) $('#launchProgress').style.width=`${Math.max(0,Math.min(100,percent))}%`; $('#launchPopStopBtn').classList.toggle('hidden',!showStop); }
 function hideLaunchPop(){ $('#launchPop').classList.add('hidden'); $('#launchProgress').style.width='0%'; }
 function applyLaunchState(v={}) {
-  state.launchState=v.state||'idle'; state.activeInstanceId=v.instanceId||state.activeInstanceId; renderPlayButton();
+  state.launchState=v.state||'idle'; state.activeInstanceId=v.instanceId||state.activeInstanceId; renderPlayButton(); renderHomeLaunchState();
   if(state.launchState==='preparing') showLaunchPop('Minecraft 준비 중',v.name?`${v.name}을(를) 준비하고 있습니다.`:'필요한 파일을 확인하고 있습니다.',2,true);
   else if(state.launchState==='stopping'){showLaunchPop('Minecraft 중지 중','종료 요청을 보냈습니다.',null,false);clearTimeout(applyLaunchState._stopT);applyLaunchState._stopT=setTimeout(hideLaunchPop,350);}
   else if(state.launchState==='running'){ showLaunchPop('Minecraft 실행됨',v.name?`${v.name}이(가) 실행 중입니다.`:'게임이 실행 중입니다.',100,false); clearTimeout(applyLaunchState._t); applyLaunchState._t=setTimeout(hideLaunchPop,1800); }
@@ -199,7 +212,10 @@ function applyLaunchState(v={}) {
 async function renderContent() {
   const inst=currentInstance();
   $('#contentContext').textContent=inst?`${inst.name} · Minecraft ${inst.version} · ${loaderLabel(inst.loader)}`:'먼저 홈에서 인스턴스를 선택해 주세요.';
-  $('#searchInput').disabled=!inst; $('#searchBtn').disabled=!inst; $('#contentUpdatesBtn').disabled=!inst; $('#contentFolderBtn').disabled=!inst; $('#pickLocalContentBtn').disabled=!inst;
+  $('#searchInput').placeholder=`${contentTypeLabel()} 이름을 입력하면 자동으로 검색됩니다`;
+  $('#installedTools').classList.toggle('modpack-tools',state.contentType==='modpacks');
+  $('#searchInput').disabled=!inst; $('#contentUpdatesBtn').disabled=!inst; $('#contentFolderBtn').disabled=!inst; $('#pickLocalContentBtn').disabled=!inst || state.contentType==='modpacks';
+  $('#pickLocalContentBtn').title=state.contentType==='modpacks'?'모드팩은 Modrinth에서 설치해 주세요.':'직접 파일 추가';
   renderShaderVisibility();
   if(!inst){
     state.installedItems=[]; state.selectedContent.clear();
@@ -226,14 +242,17 @@ async function renderContent() {
     const selector=selectable
       ? `<label class="item-check" title="선택"><input type="checkbox" class="select-installed" ${selected?'checked':''}></label>`
       : '<span class="dependency-lock" title="다른 모드가 필요로 하는 필수 의존성">필수</span>';
-    row.innerHTML=`${selector}${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:`<div class="result-placeholder">${state.contentType==='mods'?'M':state.contentType==='resourcepacks'?'R':'S'}</div>`}<div class="item-copy"><strong>${esc(item.title||item.displayName)}</strong><span>${item.managed?`Modrinth${item.versionNumber?` · ${esc(item.versionNumber)}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'} · ${item.enabled?'사용 중':'꺼짐'}</span></div><div class="item-actions"><button class="btn subtle small toggle">${item.enabled?'끄기':'켜기'}</button>${item.managed&&!item.autoDependency?'<button class="btn subtle small update">업데이트</button>':''}<button class="btn danger small remove" ${item.autoDependency?'disabled title="필요한 모드를 먼저 삭제해 주세요."':''}>삭제</button></div>`;
+    const typeIcon=state.contentType==='mods'?'M':state.contentType==='resourcepacks'?'R':state.contentType==='shaderpacks'?'S':'P';
+    const toggleButton=state.contentType==='modpacks'?'':`<button class="btn subtle small toggle">${item.enabled?'끄기':'켜기'}</button>`;
+    row.innerHTML=`${selector}${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:`<div class="result-placeholder">${typeIcon}</div>`}<div class="item-copy"><button class="content-name installed-name" type="button">${esc(item.title||item.displayName)}</button><span>${item.managed?`Modrinth${item.versionNumber?` · ${esc(item.versionNumber)}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'}${state.contentType==='modpacks'?' · 적용됨':` · ${item.enabled?'사용 중':'꺼짐'}`}</span></div><div class="item-actions">${toggleButton}${item.managed&&!item.autoDependency?'<button class="btn subtle small update">업데이트</button>':''}<button class="btn danger small remove" ${item.autoDependency?'disabled title="필요한 모드를 먼저 삭제해 주세요."':''}>삭제</button></div>`;
+    row.querySelector('.installed-name')?.addEventListener('click',()=>openContentDetail(item));
     row.querySelector('.select-installed')?.addEventListener('change',e=>{
       if(e.currentTarget.checked) state.selectedContent.add(key); else state.selectedContent.delete(key);
       row.classList.toggle('selected',e.currentTarget.checked); syncBulkControls();
     });
-    row.querySelector('.toggle').addEventListener('click',async()=>{const r=await api.toggleContent(inst.id,state.contentType,item.name);if(!r.ok)toast(r.error||'변경 실패',true);await refreshCapabilities();await renderContent();});
-    row.querySelector('.update')?.addEventListener('click',async e=>{e.target.disabled=true;e.target.textContent='확인 중…';const r=await api.modrinthUpdate(inst.id,item.projectId);if(!r.ok)toast(r.error||'업데이트 실패',true);else toast('업데이트를 적용했습니다.');await refreshCapabilities();await renderContent();});
-    row.querySelector('.remove')?.addEventListener('click',async()=>{if(item.autoDependency)return;if(!confirm(`${item.title||item.displayName}을(를) 삭제할까요?`))return;const r=await api.deleteContent(inst.id,state.contentType,item.name);if(!r.ok)return toast(r.error||'삭제 실패',true);state.selectedContent.delete(key);await refreshCapabilities();await renderContent();toast(r.retainedAsDependency?'다른 모드에서 필요해 파일은 의존성으로 유지했습니다.':'삭제했습니다.');});
+    row.querySelector('.toggle')?.addEventListener('click',async()=>{const r=await api.toggleContent(inst.id,state.contentType,item.name);if(!r.ok)toast(r.error||'변경 실패',true);await refreshCapabilities();await renderContent();});
+    row.querySelector('.update')?.addEventListener('click',async e=>{e.target.disabled=true;e.target.textContent='확인 중…';const r=await api.modrinthUpdate(inst.id,item.projectId);if(!r.ok)toast(r.error||'업데이트 실패',true);else{if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');}await refreshCapabilities();await renderContent();});
+    row.querySelector('.remove')?.addEventListener('click',async()=>{if(item.autoDependency)return;const yes=await askConfirm(`${item.title||item.displayName}을(를) 삭제할까요?`,'콘텐츠 삭제');if(!yes)return;const r=await api.deleteContent(inst.id,state.contentType,item.name);if(!r.ok)return toast(r.error||'삭제 실패',true);state.selectedContent.delete(key);await refreshCapabilities();await renderContent();toast(r.retainedAsDependency?'다른 모드에서 필요해 파일은 의존성으로 유지했습니다.':'삭제했습니다.');});
     list.appendChild(row);
   }
   syncSearchInstalledFlags();
@@ -259,13 +278,24 @@ function syncBulkControls(){
   $('#updateAllContentBtn').disabled=!state.installedItems.some(i=>i.managed&&!i.autoDependency&&i.projectId);
   $('#deleteAllContentBtn').disabled=!state.installedItems.length;
 }
+let searchSequence=0;
+let searchTimer=null;
 async function searchContent() {
   const inst=currentInstance(); if(!inst)return;
-  const area=$('#searchResults'); area.innerHTML='<div class="empty">검색 중…</div>';
-  const r=await api.modrinthSearch(inst.id,state.contentType,$('#searchInput').value.trim());
-  if(!r.ok){area.innerHTML=`<div class="empty">${esc(r.error||'검색 실패')}</div>`;return;}
-  state.searchResults=r.results||[]; renderSearchResults();
+  const seq=++searchSequence;
+  const query=$('#searchInput').value.trim();
+  const area=$('#searchResults');
+  $('#searchLiveStatus').textContent=query?'검색 중…':'인기순';
+  if(!state.searchResults.length) area.innerHTML='<div class="empty">불러오는 중…</div>';
+  const r=await api.modrinthSearch(inst.id,state.contentType,query);
+  if(seq!==searchSequence)return;
+  if(!r.ok){area.innerHTML=`<div class="empty">${esc(r.error||'검색 실패')}</div>`;$('#searchLiveStatus').textContent='오류';return;}
+  state.searchResults=r.results||[];
+  $('#searchLiveStatus').textContent=query?`${state.searchResults.length}개 결과`:'인기순';
+  renderSearchResults();
 }
+function scheduleContentSearch(){clearTimeout(searchTimer);searchTimer=setTimeout(searchContent,320);}
+
 let dependencyPromptResolve=null;
 function closeDependencyPrompt(answer=false){
   closeModal('dependencyModal');
@@ -280,27 +310,83 @@ function askDependencyInstall(rootTitle,dependencies=[]){
   openModal('dependencyModal');
   return new Promise(resolve=>{dependencyPromptResolve=resolve;});
 }
+
+let confirmPromptResolve=null;
+function closeConfirmPrompt(answer=false){closeModal('confirmModal');const resolve=confirmPromptResolve;confirmPromptResolve=null;if(resolve)resolve(!!answer);}
+function askConfirm(message,title='확인'){
+  if(confirmPromptResolve)closeConfirmPrompt(false);
+  $('#confirmTitle').textContent=title;$('#confirmMessage').textContent=message;openModal('confirmModal');
+  return new Promise(resolve=>{confirmPromptResolve=resolve;});
+}
+
+async function openContentDetail(item){
+  const inst=currentInstance(); if(!inst)return;
+  state.detailItem=item;
+  openModal('contentDetailModal');
+  $('#contentDetailTitle').textContent=item.title||item.displayName||'콘텐츠 정보';
+  $('#contentDetailKind').textContent=contentKindLabel(item.projectType||({mods:'mod',resourcepacks:'resourcepack',shaderpacks:'shader',modpacks:'modpack'})[state.contentType]).toUpperCase();
+  $('#contentDetailDescription').textContent=item.description||'상세 정보를 불러오고 있습니다.';
+  $('#contentDetailStatus').textContent=item.installed||item.managed?'설치됨':'확인 중';
+  $('#contentDetailMeta').innerHTML='';
+  const icon=$('#contentDetailIcon'), placeholder=$('#contentDetailPlaceholder');
+  if(item.iconUrl){icon.src=item.iconUrl;icon.classList.remove('hidden');placeholder.classList.add('hidden');}else{icon.classList.add('hidden');placeholder.classList.remove('hidden');}
+  if(!item.projectId){
+    $('#contentDetailStatus').textContent='직접 추가됨';
+    $('#contentDetailDescription').textContent='직접 추가한 파일입니다. Modrinth 프로젝트 정보가 연결되어 있지 않습니다.';
+    renderDetailActions({...item,installed:true,local:true});return;
+  }
+  const r=await api.modrinthProjectDetail(inst.id,item.projectId);
+  if(!r.ok){$('#contentDetailDescription').textContent=r.error||'상세 정보를 불러오지 못했습니다.';renderDetailActions(item);return;}
+  const d={...item,...r.detail};state.detailItem=d;
+  $('#contentDetailTitle').textContent=d.title;
+  $('#contentDetailKind').textContent=contentKindLabel(d.projectType).toUpperCase();
+  $('#contentDetailDescription').textContent=d.description||'설명이 없습니다.';
+  $('#contentDetailStatus').textContent=d.updateAvailable?'업데이트 가능':d.installed?'설치됨':'설치 가능';
+  if(d.iconUrl){icon.src=d.iconUrl;icon.classList.remove('hidden');placeholder.classList.add('hidden');}
+  const meta=[];
+  if(d.currentVersion)meta.push(['현재 버전',d.currentVersion]);
+  if(d.latestVersion)meta.push(['최신 호환 버전',d.latestVersion]);
+  if(Number.isFinite(Number(d.downloads)))meta.push(['다운로드',Number(d.downloads).toLocaleString()]);
+  if(d.license)meta.push(['라이선스',d.license]);
+  if(d.categories?.length)meta.push(['분류',d.categories.slice(0,5).join(' · ')]);
+  $('#contentDetailMeta').innerHTML=meta.map(([k,v])=>`<div><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+  renderDetailActions(d);
+}
+function renderDetailActions(d){
+  const actions=$('#contentDetailActions');actions.innerHTML='<button class="btn subtle" data-detail-close>닫기</button>';
+  actions.querySelector('[data-detail-close]').addEventListener('click',()=>closeModal('contentDetailModal'));
+  if(d.local)return;
+  if(!d.installed){const b=document.createElement('button');b.className='btn primary';b.textContent='설치';b.addEventListener('click',()=>installFromDetail(b));actions.appendChild(b);}
+  else{
+    if(d.updateAvailable){const b=document.createElement('button');b.className='btn primary';b.textContent='업데이트';b.addEventListener('click',()=>updateFromDetail(b));actions.appendChild(b);}
+    if(!d.autoDependency){const b=document.createElement('button');b.className='btn danger';b.textContent='삭제';b.addEventListener('click',()=>deleteFromDetail(b));actions.appendChild(b);}
+  }
+}
+async function installProject(projectId,title,button=null){
+  const inst=currentInstance();if(!inst)return false;
+  if(button){button.disabled=true;button.textContent='확인 중…';}
+  const plan=await api.modrinthInstallPlan(inst.id,projectId);
+  if(!plan.ok){toast(plan.error||'설치 정보를 확인하지 못했습니다.',true);if(button){button.disabled=false;button.textContent='설치';}return false;}
+  let allow=false;
+  if(plan.dependencies?.length){allow=await askDependencyInstall(plan.rootTitle,plan.dependencies);if(!allow){if(button){button.disabled=false;button.textContent='설치';}return false;}}
+  if(button)button.textContent='설치 중…';
+  const r=await api.modrinthInstall(inst.id,projectId,allow);
+  if(!r.ok){toast(r.error||'설치하지 못했습니다.',true);if(button){button.disabled=false;button.textContent='설치';}return false;}
+  if(r.config){state.config=r.config;renderAll();}
+  toast(`${r.title||title} 설치 완료`);state.selectedContent.clear();await refreshCapabilities();await renderContent();await searchContent();return true;
+}
+async function installFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;if(await installProject(d.projectId,d.title,button))await openContentDetail({...d,installed:true});}
+async function updateFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;button.disabled=true;button.textContent='업데이트 중…';const r=await api.modrinthUpdate(currentInstance().id,d.projectId);if(!r.ok){toast(r.error||'업데이트 실패',true);button.disabled=false;button.textContent='업데이트';return;}if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');await refreshCapabilities();await renderContent();await openContentDetail(d);}
+async function deleteFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;const yes=await askConfirm(`${d.title}을(를) 삭제할까요?`,'콘텐츠 삭제');if(!yes)return;button.disabled=true;const r=await api.modrinthUninstall(currentInstance().id,d.projectId);if(!r.ok){toast(r.error||'삭제 실패',true);button.disabled=false;return;}closeModal('contentDetailModal');await refreshCapabilities();await renderContent();await searchContent();toast('삭제했습니다.');}
+
 function renderSearchResults(){
   const area=$('#searchResults');area.innerHTML='';
   if(!state.searchResults.length){area.innerHTML='<div class="empty">검색 결과가 없습니다.</div>';return;}
   for(const item of state.searchResults){
     const row=document.createElement('div');row.className='result-item';
-    row.innerHTML=`${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:'<div class="result-placeholder">◇</div>'}<div class="item-copy"><strong>${esc(item.title)}</strong><span>${esc(item.author||'')} · ${Number(item.downloads||0).toLocaleString()} 다운로드</span><span>${esc(item.description||'')}</span></div><button class="mod-install-btn ${item.installed?'installed':''} install" ${item.installed?'disabled':''}>${item.installed?'✓ 설치됨':'＋ 설치'}</button>`;
-    row.querySelector('.install')?.addEventListener('click',async e=>{
-      if(item.installed)return;
-      const btn=e.currentTarget;btn.disabled=true;btn.textContent='확인 중…';
-      const plan=await api.modrinthInstallPlan(currentInstance().id,item.projectId);
-      if(!plan.ok){toast(plan.error||'설치 정보를 확인하지 못했습니다.',true);btn.disabled=false;btn.textContent='＋ 설치';return;}
-      let allow=false;
-      if(plan.dependencies?.length){
-        allow=await askDependencyInstall(plan.rootTitle,plan.dependencies);
-        if(!allow){btn.disabled=false;btn.textContent='＋ 설치';return;}
-      }
-      btn.textContent='설치 중…';
-      const r=await api.modrinthInstall(currentInstance().id,item.projectId,allow);
-      if(!r.ok){toast(r.error||'설치하지 못했습니다.',true);btn.disabled=false;btn.textContent='＋ 설치';return;}
-      toast(`${r.title||item.title} 설치 완료`);item.installed=true;state.selectedContent.clear();await refreshCapabilities();await renderContent();
-    });
+    row.innerHTML=`${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:'<div class="result-placeholder">◇</div>'}<div class="item-copy"><button class="content-name result-name" type="button">${esc(item.title)}</button><span>${esc(item.author||'')} · ${Number(item.downloads||0).toLocaleString()} 다운로드</span><span>${esc(item.description||'')}</span></div><button class="mod-install-btn ${item.installed?'installed':''} install" ${item.installed?'disabled':''}>${item.installed?'✓ 설치됨':'＋ 설치'}</button>`;
+    row.querySelector('.result-name').addEventListener('click',()=>openContentDetail(item));
+    row.querySelector('.install')?.addEventListener('click',async e=>{if(item.installed)return;const ok=await installProject(item.projectId,item.title,e.currentTarget);if(ok)item.installed=true;});
     area.appendChild(row);
   }
 }
@@ -311,10 +397,20 @@ function renderStartupUpdate(u=state.update){ const gate=$('#startupGate'), chec
 function applyUpdateState(u={}){state.update={...state.update,...u};updateSettingsText(state.update);renderStartupUpdate(state.update);}
 function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);}
 
+function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classList.contains('active')){
+  const heading=$('#pageHeading');if(!heading)return;
+  if(!isContent){heading.style.opacity='1';heading.style.transform='translateY(0)';heading.style.pointerEvents='auto';return;}
+  const progress=Math.max(0,Math.min(1,Number(scrollTop||0)/115));
+  heading.style.opacity=String(1-progress);
+  heading.style.transform=`translateY(${-10*progress}px)`;
+  heading.style.pointerEvents=progress>.92?'none':'auto';
+}
+$('#view-content').addEventListener('scroll',e=>syncContentHeaderFade(e.currentTarget.scrollTop,true),{passive:true});
+
 // navigation
 $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
 $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.dataset.close)));
-$$('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target===m){if(m.id==='dependencyModal')closeDependencyPrompt(false);else closeModal(m.id);}}));
+$$('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target!==m)return;if(m.id==='dependencyModal'||m.id==='confirmModal')return;closeModal(m.id);}));
 $('#newInstanceBtn').addEventListener('click',openCreateModal);
 $('#heroSettingsBtn').addEventListener('click',()=>openInstanceModal());
 $('#settingsInstanceBtn').addEventListener('click',()=>openInstanceModal());
@@ -341,13 +437,13 @@ async function openSelectedInstanceFolder(){
 $('#openInstanceFolderBtn').addEventListener('click',openSelectedInstanceFolder);
 $('#settingsOpenFolderBtn').addEventListener('click',openSelectedInstanceFolder);
 $$('.content-tab').forEach(b=>b.addEventListener('click',async()=>{state.contentType=b.dataset.type;state.selectedContent.clear();$$('.content-tab').forEach(x=>x.classList.toggle('active',x===b));state.searchResults=[];$('#searchInput').value='';await renderContent();await searchContent();}));
-$('#searchBtn').addEventListener('click',searchContent);$('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchContent();});$('#contentFolderBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return toast('인스턴스를 먼저 선택해 주세요.',true);const r=await api.openContentFolder(i.id,state.contentType);if(!r?.ok)toast(r?.error||'콘텐츠 폴더를 열지 못했습니다.',true);});$('#pickLocalContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const r=await api.pickContent(i.id,state.contentType);if(r.added?.length)toast(`${r.added.length}개 파일을 추가했습니다.`);state.selectedContent.clear();await refreshCapabilities();await renderContent();});$('#contentUpdatesBtn').addEventListener('click',()=>checkContentUpdates(true));
+$('#searchInput').addEventListener('input',scheduleContentSearch);$('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(searchTimer);searchContent();}});$('#contentFolderBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return toast('인스턴스를 먼저 선택해 주세요.',true);const r=await api.openContentFolder(i.id,state.contentType);if(!r?.ok)toast(r?.error||'콘텐츠 폴더를 열지 못했습니다.',true);});$('#pickLocalContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const r=await api.pickContent(i.id,state.contentType);if(r.added?.length)toast(`${r.added.length}개 파일을 추가했습니다.`);state.selectedContent.clear();await refreshCapabilities();await renderContent();});$('#contentUpdatesBtn').addEventListener('click',()=>checkContentUpdates(true));
 $('#selectAllInstalled').addEventListener('change',e=>{const selectable=state.installedItems.filter(i=>!i.autoDependency);state.selectedContent.clear();if(e.currentTarget.checked)for(const item of selectable)state.selectedContent.add(contentSelectionKey(item));renderContent();});
-$('#updateSelectedContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const selected=selectedInstalledItems().filter(x=>x.managed&&x.projectId);if(!selected.length)return;const btn=$('#updateSelectedContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateBatch(i.id,selected.map(x=>x.projectId));btn.textContent='선택 업데이트';if(!r.ok){syncBulkControls();return toast(r.error||'업데이트 실패',true);}toast(r.count?`${r.count}개 콘텐츠를 업데이트했습니다.`:'선택한 콘텐츠가 모두 최신입니다.');await refreshCapabilities();await renderContent();});
-$('#deleteSelectedContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const selected=selectedInstalledItems();if(!selected.length)return;if(!confirm(`선택한 ${selected.length}개 콘텐츠를 삭제할까요?`))return;const btn=$('#deleteSelectedContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteContentBatch(i.id,state.contentType,selected.map(x=>x.name));btn.textContent='선택 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast(`${r.count||selected.length}개 콘텐츠를 삭제했습니다.`);});
-$('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const btn=$('#updateAllContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateAll(i.id,state.contentType);btn.textContent='전체 업데이트';if(!r.ok){syncBulkControls();return toast(r.error||'업데이트 실패',true);}toast(r.count?`${r.count}개 콘텐츠를 업데이트했습니다.`:'설치된 콘텐츠가 모두 최신입니다.');$('#contentUpdateStrip').classList.add('hidden');await refreshCapabilities();await renderContent();});
-$('#deleteAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i||!state.installedItems.length)return;if(!confirm(`현재 ${state.contentType==='mods'?'모드':state.contentType==='resourcepacks'?'리소스팩':'셰이더'}를 모두 삭제할까요?`))return;const btn=$('#deleteAllContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteAllContent(i.id,state.contentType);btn.textContent='전체 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'전체 삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast('전체 삭제가 완료되었습니다.');});
-$('#dependencyConfirmBtn').addEventListener('click',()=>closeDependencyPrompt(true));$('#dependencyCancelBtn').addEventListener('click',()=>closeDependencyPrompt(false));$('#dependencyCloseBtn').addEventListener('click',()=>closeDependencyPrompt(false));
+$('#updateSelectedContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const selected=selectedInstalledItems().filter(x=>x.managed&&x.projectId);if(!selected.length)return;const btn=$('#updateSelectedContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateBatch(i.id,selected.map(x=>x.projectId));btn.textContent='선택 업데이트';if(!r.ok){syncBulkControls();return toast(r.error||'업데이트 실패',true);}if(r.config){state.config=r.config;renderAll();}toast(r.count?`${r.count}개 콘텐츠를 업데이트했습니다.`:'선택한 콘텐츠가 모두 최신입니다.');await refreshCapabilities();await renderContent();});
+$('#deleteSelectedContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const selected=selectedInstalledItems();if(!selected.length)return;if(!(await askConfirm(`선택한 ${selected.length}개 콘텐츠를 삭제할까요?`,'선택한 콘텐츠 삭제')))return;const btn=$('#deleteSelectedContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteContentBatch(i.id,state.contentType,selected.map(x=>x.name));btn.textContent='선택 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast(`${r.count||selected.length}개 콘텐츠를 삭제했습니다.`);});
+$('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const btn=$('#updateAllContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateAll(i.id,state.contentType);btn.textContent='전체 업데이트';if(!r.ok){syncBulkControls();return toast(r.error||'업데이트 실패',true);}if(r.config){state.config=r.config;renderAll();}toast(r.count?`${r.count}개 콘텐츠를 업데이트했습니다.`:'설치된 콘텐츠가 모두 최신입니다.');$('#contentUpdateStrip').classList.add('hidden');await refreshCapabilities();await renderContent();});
+$('#deleteAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i||!state.installedItems.length)return;if(!(await askConfirm(`현재 ${contentTypeLabel()}를 모두 삭제할까요?`,'전체 삭제')))return;const btn=$('#deleteAllContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteAllContent(i.id,state.contentType);btn.textContent='전체 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'전체 삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast('전체 삭제가 완료되었습니다.');});
+$('#dependencyConfirmBtn').addEventListener('click',()=>closeDependencyPrompt(true));$('#dependencyCancelBtn').addEventListener('click',()=>closeDependencyPrompt(false));$('#confirmYesBtn').addEventListener('click',()=>closeConfirmPrompt(true));$('#confirmNoBtn').addEventListener('click',()=>closeConfirmPrompt(false));
 async function openReleaseNotes(){const version=state.update.availableVersion;if(!version)return toast('확인할 업데이트 버전이 없습니다.',true);const r=await api.openLauncherReleaseNotes(version);if(!r.ok)toast(r.error||'업데이트 내역을 열지 못했습니다.',true);}
 $('#settingsReleaseNotesBtn').addEventListener('click',openReleaseNotes);
 $('#gateReleaseNotesBtn').addEventListener('click',openReleaseNotes);
@@ -366,7 +462,7 @@ api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.8';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.9';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
   $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
   renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
   const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';

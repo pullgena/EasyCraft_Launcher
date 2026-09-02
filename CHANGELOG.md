@@ -1,3 +1,3 @@
-# EasyCraft Launcher 0.4.8
+# EasyCraft Launcher 0.4.9
 
-개발 변경사항은 소스에 반영되었습니다. 배포용 업데이트 내역은 릴리스 시 별도로 작성합니다.
+Development build. Release notes are prepared at distribution time.

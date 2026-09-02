@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   openInstanceFolder: id => ipcRenderer.invoke('open-instance-folder', id),
 
   modrinthSearch: (id, type, query) => ipcRenderer.invoke('modrinth-search', id, type, query),
+  modrinthProjectDetail: (id, projectId) => ipcRenderer.invoke('modrinth-project-detail', id, projectId),
   modrinthInstallPlan: (id, projectId) => ipcRenderer.invoke('modrinth-install-plan', id, projectId),
   modrinthInstall: (id, projectId, allowDependencies = false) => ipcRenderer.invoke('modrinth-install', id, projectId, allowDependencies),
   modrinthUninstall: (id, projectId) => ipcRenderer.invoke('modrinth-uninstall', id, projectId),
