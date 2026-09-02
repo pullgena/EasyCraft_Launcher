@@ -12,7 +12,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.6 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.7 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -610,13 +610,49 @@ ipcMain.handle('delete-content', async (_event, id, type, name) => {
   await fsp.rm(path.join(folder, safe), { force: true });
   return { ok: true };
 });
+async function openFolderReliable(folder) {
+  const resolved = path.resolve(folder);
+  await fsp.mkdir(resolved, { recursive: true });
+
+  // Windows에서는 explorer.exe를 직접 실행하는 방식을 우선 사용한다.
+  // 일부 Electron/Windows 조합에서 shell.openPath가 성공 문자열을 반환해도
+  // 실제 탐색기 창이 나타나지 않는 문제를 피하기 위한 처리다.
+  if (process.platform === 'win32') {
+    try {
+      const child = spawn(process.env.WINDIR ? path.join(process.env.WINDIR, 'explorer.exe') : 'explorer.exe', [resolved], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+      });
+      child.unref();
+      return { ok: true, path: resolved };
+    } catch {}
+  }
+
+  try {
+    const error = await shell.openPath(resolved);
+    return { ok: !error, path: resolved, error: error || '' };
+  } catch (error) {
+    return { ok: false, path: resolved, error: error.message || '폴더를 열지 못했습니다.' };
+  }
+}
+
 ipcMain.handle('open-content-folder', async (_event, id, type) => {
-  const folder = targetFolder(id, type); await fsp.mkdir(folder, { recursive: true });
-  const error = await shell.openPath(folder); return { ok: !error, error };
+  try {
+    return await openFolderReliable(targetFolder(id, type));
+  } catch (error) {
+    return { ok: false, error: error.message || '콘텐츠 폴더를 열지 못했습니다.' };
+  }
 });
 ipcMain.handle('open-instance-folder', async (_event, id) => {
-  const folder = gameDir(id); await fsp.mkdir(folder, { recursive: true });
-  const error = await shell.openPath(folder); return { ok: !error, error };
+  try {
+    const { instance } = await getInstance(id);
+    if (!instance) return { ok: false, error: '인스턴스를 찾을 수 없습니다.' };
+    await ensureInstanceFolders(id);
+    return await openFolderReliable(gameDir(id));
+  } catch (error) {
+    return { ok: false, error: error.message || '인스턴스 폴더를 열지 못했습니다.' };
+  }
 });
 
 async function recordFileExists(id, rec) {
@@ -1279,7 +1315,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.6 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.7 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes };

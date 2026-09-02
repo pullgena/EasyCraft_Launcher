@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.6',
+  appVersion: '0.4.7',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -247,9 +247,16 @@ $('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingI
 $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!confirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스를 삭제했습니다.');});
 $('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
-$('#openInstanceFolderBtn').addEventListener('click',()=>{const i=currentInstance();if(i)api.openInstanceFolder(i.id);});$('#settingsOpenFolderBtn').addEventListener('click',()=>{const i=currentInstance();if(i)api.openInstanceFolder(i.id);});
+async function openSelectedInstanceFolder(){
+  const i=currentInstance();
+  if(!i) return toast('인스턴스를 먼저 선택해 주세요.',true);
+  const r=await api.openInstanceFolder(i.id);
+  if(!r?.ok) return toast(r?.error||'인스턴스 폴더를 열지 못했습니다.',true);
+}
+$('#openInstanceFolderBtn').addEventListener('click',openSelectedInstanceFolder);
+$('#settingsOpenFolderBtn').addEventListener('click',openSelectedInstanceFolder);
 $$('.content-tab').forEach(b=>b.addEventListener('click',async()=>{state.contentType=b.dataset.type;$$('.content-tab').forEach(x=>x.classList.toggle('active',x===b));state.searchResults=[];$('#searchInput').value='';await renderContent();await searchContent();}));
-$('#searchBtn').addEventListener('click',searchContent);$('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchContent();});$('#contentFolderBtn').addEventListener('click',()=>{const i=currentInstance();if(i)api.openContentFolder(i.id,state.contentType);});$('#pickLocalContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const r=await api.pickContent(i.id,state.contentType);if(r.added?.length)toast(`${r.added.length}개 파일을 추가했습니다.`);await refreshCapabilities();await renderContent();});$('#contentUpdatesBtn').addEventListener('click',()=>checkContentUpdates(true));$('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const btn=$('#updateAllContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateAll(i.id);btn.disabled=false;btn.textContent='모두 업데이트';if(!r.ok)return toast(r.error||'업데이트 실패',true);toast(`${r.count||0}개 콘텐츠를 업데이트했습니다.`);$('#contentUpdateStrip').classList.add('hidden');await refreshCapabilities();await renderContent();});
+$('#searchBtn').addEventListener('click',searchContent);$('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')searchContent();});$('#contentFolderBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return toast('인스턴스를 먼저 선택해 주세요.',true);const r=await api.openContentFolder(i.id,state.contentType);if(!r?.ok)toast(r?.error||'콘텐츠 폴더를 열지 못했습니다.',true);});$('#pickLocalContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const r=await api.pickContent(i.id,state.contentType);if(r.added?.length)toast(`${r.added.length}개 파일을 추가했습니다.`);await refreshCapabilities();await renderContent();});$('#contentUpdatesBtn').addEventListener('click',()=>checkContentUpdates(true));$('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const btn=$('#updateAllContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateAll(i.id);btn.disabled=false;btn.textContent='모두 업데이트';if(!r.ok)return toast(r.error||'업데이트 실패',true);toast(`${r.count||0}개 콘텐츠를 업데이트했습니다.`);$('#contentUpdateStrip').classList.add('hidden');await refreshCapabilities();await renderContent();});
 async function openReleaseNotes(){const version=state.update.availableVersion;if(!version)return toast('확인할 업데이트 버전이 없습니다.',true);const r=await api.openLauncherReleaseNotes(version);if(!r.ok)toast(r.error||'업데이트 내역을 열지 못했습니다.',true);}
 $('#settingsReleaseNotesBtn').addEventListener('click',openReleaseNotes);
 $('#gateReleaseNotesBtn').addEventListener('click',openReleaseNotes);
@@ -268,7 +275,7 @@ api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.6';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.7';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
   $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
   renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
   const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';

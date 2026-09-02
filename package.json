@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.6",
-  "description": "EasyCraft Launcher 0.4.6 - loader version selection, automatic game/loader version updates, and fixed Minecraft face avatar",
+  "version": "0.4.7",
+  "description": "EasyCraft Launcher 0.4.7 - fixed instance folder opening on Windows",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
