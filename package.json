@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.5",
-  "description": "EasyCraft Launcher 0.4.5 - redesigned game launcher UI and visible silent-update progress window",
+  "version": "0.4.6",
+  "description": "EasyCraft Launcher 0.4.6 - loader version selection, automatic game/loader version updates, and fixed Minecraft face avatar",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",

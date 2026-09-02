@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.5',
+  appVersion: '0.4.6',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -42,9 +42,11 @@ function renderAccount() {
   $('#accountName').textContent = account?.name || '로그인 필요';
   $('#accountSub').textContent = account ? 'Microsoft 연결됨' : 'Microsoft 계정';
   const avatar=$('#accountAvatar');
-  avatar.textContent = account?.skinUrl ? '' : (account?.name?.trim()?.[0]?.toUpperCase() || '?');
-  avatar.classList.toggle('skin-head', !!account?.skinUrl);
-  avatar.style.backgroundImage = account?.skinUrl ? `url("${String(account.skinUrl).replace(/["\\]/g,'')}")` : '';
+  const faceUrl = account?.faceUrl || null;
+  const overlayUrl = account?.faceOverlayUrl || null;
+  avatar.textContent = faceUrl ? '' : (account?.name?.trim()?.[0]?.toUpperCase() || '?');
+  avatar.classList.toggle('skin-head', !!faceUrl);
+  avatar.style.backgroundImage = faceUrl ? `${overlayUrl ? `url("${String(overlayUrl).replace(/["\\]/g,'')}"), ` : ''}url("${String(faceUrl).replace(/["\\]/g,'')}")` : '';
   $('#railLoginBtn').classList.toggle('hidden', !!account);
   $('#railLogoutBtn').classList.toggle('hidden', !account);
   $('#settingsLoginBtn').classList.toggle('hidden', !!account);
@@ -56,7 +58,7 @@ function renderHero() {
   $('#selectedChip').textContent = inst ? inst.name : '인스턴스 없음';
   $('#heroName').textContent = inst?.name || 'Minecraft를 준비해 볼까요?';
   $('#heroBadge').textContent = inst ? `${loaderLabel(inst.loader)} 인스턴스` : '새 인스턴스를 만들어 시작하세요';
-  $('#heroMeta').textContent = inst ? `Minecraft ${inst.version} · ${loaderLabel(inst.loader)} · RAM ${inst.settings?.memory?.max || 6}GB` : '버전과 로더를 선택하면 모드까지 인스턴스별로 깔끔하게 관리할 수 있습니다.';
+  $('#heroMeta').textContent = inst ? `Minecraft ${inst.version} · ${loaderLabel(inst.loader)}${inst.loader !== 'vanilla' ? ` ${inst.loaderVersion === 'latest' || !inst.loaderVersion ? '(최신 자동)' : inst.loaderVersion}` : ''} · RAM ${inst.settings?.memory?.max || 6}GB` : '버전과 로더를 선택하면 모드까지 인스턴스별로 깔끔하게 관리할 수 있습니다.';
   $('#settingsInstanceName').textContent = inst ? `${inst.name} · Minecraft ${inst.version}` : '인스턴스 없음';
   $('#playBtn').disabled = !inst && state.launchState === 'idle';
   $('#heroSettingsBtn').disabled = !inst;
@@ -83,7 +85,7 @@ function renderInstances() {
   for (const inst of state.config.instances) {
     const card = document.createElement('article');
     card.className = `instance-card${inst.id === state.config.selectedInstanceId ? ' selected' : ''}`;
-    card.innerHTML = `<button class="instance-menu" title="설정">•••</button><span class="instance-loader">${esc(loaderLabel(inst.loader))}</span><h3>${esc(inst.name)}</h3><p>Minecraft ${esc(inst.version)} · RAM ${esc(inst.settings?.memory?.max || 6)}GB</p>`;
+    card.innerHTML = `<button class="instance-menu" title="설정">•••</button><span class="instance-loader">${esc(loaderLabel(inst.loader))}</span><h3>${esc(inst.name)}</h3><p>Minecraft ${esc(inst.version)}${inst.loader !== 'vanilla' ? ` · ${esc(inst.loaderVersion === 'latest' || !inst.loaderVersion ? '로더 최신 자동' : inst.loaderVersion)}` : ''} · RAM ${esc(inst.settings?.memory?.max || 6)}GB</p>`;
     card.addEventListener('click', async e => {
       if (e.target.closest('.instance-menu')) return;
       const r = await api.selectInstance(inst.id); if (r.ok) { state.config = r.config; await refreshCapabilities(); renderAll(); }
@@ -116,14 +118,42 @@ function fillVersionSelect(select, value) {
   if (![...select.options].some(o => o.value === wanted)) { const o=document.createElement('option'); o.value=wanted; o.textContent=wanted; select.prepend(o); }
   select.value = wanted;
 }
+async function fillLoaderVersionSelect(loader, minecraftVersion, select, wrap, wanted='latest', autoWrap=null) {
+  const enabled = loader && loader !== 'vanilla';
+  wrap.classList.toggle('hidden', !enabled);
+  if (autoWrap) autoWrap.classList.toggle('hidden', !enabled);
+  if (!enabled) { select.innerHTML='<option value="latest">최신 자동</option>'; select.value='latest'; return; }
+  select.disabled = true;
+  select.innerHTML = '<option value="latest">불러오는 중…</option>';
+  const r = await api.fetchLoaderVersions(loader, minecraftVersion);
+  select.innerHTML = '';
+  const automatic = document.createElement('option'); automatic.value='latest'; automatic.textContent = r?.latest ? `최신 자동 (${r.latest})` : '최신 자동'; select.appendChild(automatic);
+  for (const item of r?.versions || []) {
+    const o=document.createElement('option'); o.value=item.version; o.textContent=`${item.version}${item.stable===false?' · 실험':''}`; select.appendChild(o);
+  }
+  const desired = wanted || 'latest';
+  const hasDesired = [...select.options].some(o=>o.value===desired);
+  if (desired !== 'latest' && !hasDesired && !r?.ok) { const o=document.createElement('option'); o.value=desired; o.textContent=`${desired} · 기존 선택`; select.prepend(o); }
+  select.value = [...select.options].some(o=>o.value===desired) ? desired : 'latest';
+  select.disabled = false;
+}
+async function syncCreateLoaderVersion(wanted='latest') {
+  await fillLoaderVersionSelect($('#createLoader').value, $('#createVersion').value, $('#createLoaderVersion'), $('#createLoaderVersionWrap'), wanted);
+}
+async function syncEditLoaderVersion(wanted=null) {
+  const inst=state.config.instances.find(i=>i.id===state.editingInstanceId);
+  await fillLoaderVersionSelect($('#editLoader').value, $('#editVersion').value, $('#editLoaderVersion'), $('#editLoaderVersionWrap'), wanted ?? inst?.loaderVersion ?? 'latest', $('#editAutoLoaderWrap'));
+}
 function openModal(id) { $(`#${id}`).classList.remove('hidden'); }
 function closeModal(id) { $(`#${id}`).classList.add('hidden'); }
-function openCreateModal() { $('#createName').value=''; fillVersionSelect($('#createVersion'), state.latest || state.versions[0]); $('#createLoader').value='vanilla'; openModal('createModal'); setTimeout(()=>$('#createName').focus(),50); }
+function openCreateModal() { $('#createName').value=''; fillVersionSelect($('#createVersion'), state.latest || state.versions[0]); $('#createLoader').value='vanilla'; syncCreateLoaderVersion('latest'); openModal('createModal'); setTimeout(()=>$('#createName').focus(),50); }
 function openInstanceModal(id = currentInstance()?.id) {
   const inst = state.config.instances.find(i => i.id === id); if (!inst) return toast('인스턴스를 먼저 선택해 주세요.', true);
   state.editingInstanceId = id;
   $('#editName').value = inst.name; fillVersionSelect($('#editVersion'), inst.version); $('#editLoader').value=inst.loader;
-  const s=inst.settings||{}; $('#editAutoContent').checked=s.autoUpdateContent!==false; $('#editMinRam').value=s.memory?.min||2; $('#editMaxRam').value=s.memory?.max||6; $('#editWidth').value=s.screen?.width||1280; $('#editHeight').value=s.screen?.height||720; $('#editFullscreen').checked=!!s.screen?.fullscreen; $('#editJavaPath').value=s.javaPath||''; $('#editJvmArgs').value=s.jvmArgs||''; $('#editGameArgs').value=s.gameArgs||'';
+  const s=inst.settings||{}; $('#editAutoContent').checked=s.autoUpdateContent!==false; $('#editAutoMinecraftVersion').checked=!!s.autoUpdateMinecraftVersion; $('#editAutoLoaderVersion').checked=s.autoUpdateLoaderVersion!==false; $('#editMinRam').value=s.memory?.min||2; $('#editMaxRam').value=s.memory?.max||6; $('#editWidth').value=s.screen?.width||1280; $('#editHeight').value=s.screen?.height||720; $('#editFullscreen').checked=!!s.screen?.fullscreen; $('#editJavaPath').value=s.javaPath||''; $('#editJvmArgs').value=s.jvmArgs||''; $('#editGameArgs').value=s.gameArgs||'';
+  $('#instanceVersionHint').textContent='Minecraft와 모드 로더의 최신 버전을 확인할 수 있습니다.';
+  syncEditLoaderVersion(inst.loaderVersion || 'latest');
   openModal('instanceModal');
 }
 
@@ -150,7 +180,9 @@ async function launchOrStop() {
   if (!state.account) { toast('먼저 Microsoft 계정으로 로그인해 주세요.', true); return login(); }
   state.launchState='preparing'; state.activeInstanceId=inst.id; renderPlayButton(); showLaunchPop('Minecraft 준비 중',`${inst.name}을(를) 준비하고 있습니다.`,2,true);
   const r=await api.launchGame(inst.id);
-  if(!r.ok){ state.launchState='idle'; renderPlayButton(); hideLaunchPop(); if(r.needLogin){state.account=null;renderAccount();} toast(r.error||'Minecraft를 실행하지 못했습니다.',true); }
+  if(!r.ok){ state.launchState='idle'; renderPlayButton(); hideLaunchPop(); if(r.needLogin){state.account=null;renderAccount();} toast(r.error||'Minecraft를 실행하지 못했습니다.',true); return; }
+  if(r.config){ state.config=r.config; renderHero(); renderInstances(); }
+  if(r.versionChanges?.length) toast(`자동 업데이트: ${r.versionChanges.join(' · ')}`);
 }
 function showLaunchPop(title,text,percent=null,showStop=true){ const el=$('#launchPop'); el.classList.remove('hidden'); $('#launchPopTitle').textContent=title; $('#launchPopText').textContent=text||''; if(percent!==null) $('#launchProgress').style.width=`${Math.max(0,Math.min(100,percent))}%`; $('#launchPopStopBtn').classList.toggle('hidden',!showStop); }
 function hideLaunchPop(){ $('#launchPop').classList.add('hidden'); $('#launchProgress').style.width='0%'; }
@@ -203,10 +235,15 @@ $('#heroSettingsBtn').addEventListener('click',()=>openInstanceModal());
 $('#settingsInstanceBtn').addEventListener('click',()=>openInstanceModal());
 $('#heroContentBtn').addEventListener('click',()=>{state.contentType='mods';switchView('content');});
 $$('.quick-card').forEach(b=>b.addEventListener('click',()=>{state.contentType=b.dataset.content;switchView('content');}));
-$('#createConfirmBtn').addEventListener('click',async()=>{const name=$('#createName').value.trim();if(!name)return toast('인스턴스 이름을 입력해 주세요.',true);const btn=$('#createConfirmBtn');btn.disabled=true;const r=await api.createInstance({name,version:$('#createVersion').value,loader:$('#createLoader').value});btn.disabled=false;if(!r.ok)return toast(r.error||'인스턴스를 만들지 못했습니다.',true);state.config=r.config;closeModal('createModal');await refreshCapabilities();renderAll();toast(`${r.instance.name} 인스턴스를 만들었습니다.`);});
+$('#createConfirmBtn').addEventListener('click',async()=>{const name=$('#createName').value.trim();if(!name)return toast('인스턴스 이름을 입력해 주세요.',true);const btn=$('#createConfirmBtn');btn.disabled=true;const r=await api.createInstance({name,version:$('#createVersion').value,loader:$('#createLoader').value,loaderVersion:$('#createLoader').value==='vanilla'?null:$('#createLoaderVersion').value});btn.disabled=false;if(!r.ok)return toast(r.error||'인스턴스를 만들지 못했습니다.',true);state.config=r.config;closeModal('createModal');await refreshCapabilities();renderAll();toast(`${r.instance.name} 인스턴스를 만들었습니다.`);});
 let composing=false;$('#createName').addEventListener('compositionstart',()=>composing=true);$('#createName').addEventListener('compositionend',()=>composing=false);$('#createName').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing&&!composing&&e.keyCode!==229)$('#createConfirmBtn').click();});
+$('#createLoader').addEventListener('change',()=>syncCreateLoaderVersion('latest'));
+$('#createVersion').addEventListener('change',()=>syncCreateLoaderVersion($('#createLoaderVersion').value||'latest'));
+$('#editLoader').addEventListener('change',()=>syncEditLoaderVersion('latest'));
+$('#editVersion').addEventListener('change',()=>syncEditLoaderVersion($('#editLoaderVersion').value||'latest'));
+$('#checkInstanceVersionsBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const el=$('#instanceVersionHint');el.textContent='최신 버전을 확인하고 있습니다…';const r=await api.instanceVersionStatus(id);if(!r.ok){el.textContent=`확인 실패: ${r.error||'알 수 없는 오류'}`;return;}const parts=[];parts.push(r.minecraftUpdateAvailable?`Minecraft ${r.currentMinecraft} → ${r.latestMinecraft} 업데이트 가능`:`Minecraft ${r.currentMinecraft} 최신`);const inst=state.config.instances.find(i=>i.id===id);if(inst?.loader!=='vanilla')parts.push(r.currentLoader==='latest'?`${loaderLabel(inst.loader)}는 최신 자동 선택 중`:r.loaderUpdateAvailable?`${loaderLabel(inst.loader)} ${r.currentLoader} → ${r.latestLoader} 업데이트 가능`:`${loaderLabel(inst.loader)} ${r.currentLoader||'자동'} 최신`);el.textContent=parts.join(' · ');});
 $('#pickJavaBtn').addEventListener('click',async()=>{const r=await api.pickJava();if(r.ok)$('#editJavaPath').value=r.path||'';});
-$('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const r=await api.updateInstanceSettings(id,{name:$('#editName').value,version:$('#editVersion').value,loader:$('#editLoader').value,autoUpdateContent:$('#editAutoContent').checked,memory:{min:$('#editMinRam').value,max:$('#editMaxRam').value},screen:{width:$('#editWidth').value,height:$('#editHeight').value,fullscreen:$('#editFullscreen').checked},javaPath:$('#editJavaPath').value,jvmArgs:$('#editJvmArgs').value,gameArgs:$('#editGameArgs').value});if(!r.ok)return toast(r.error||'설정을 저장하지 못했습니다.',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스 설정을 저장했습니다.');});
+$('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const r=await api.updateInstanceSettings(id,{name:$('#editName').value,version:$('#editVersion').value,loader:$('#editLoader').value,loaderVersion:$('#editLoader').value==='vanilla'?null:$('#editLoaderVersion').value,autoUpdateContent:$('#editAutoContent').checked,autoUpdateMinecraftVersion:$('#editAutoMinecraftVersion').checked,autoUpdateLoaderVersion:$('#editAutoLoaderVersion').checked,memory:{min:$('#editMinRam').value,max:$('#editMaxRam').value},screen:{width:$('#editWidth').value,height:$('#editHeight').value,fullscreen:$('#editFullscreen').checked},javaPath:$('#editJavaPath').value,jvmArgs:$('#editJvmArgs').value,gameArgs:$('#editGameArgs').value});if(!r.ok)return toast(r.error||'설정을 저장하지 못했습니다.',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스 설정을 저장했습니다.');});
 $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!confirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스를 삭제했습니다.');});
 $('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
@@ -231,7 +268,7 @@ api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.5';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.6';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
   $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
   renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
   const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';

@@ -1,28 +1,31 @@
-# EasyCraft Launcher 0.4.5
+# EasyCraft Launcher v0.4.6
 
-Windows용 Minecraft Java Edition 런처입니다.
+Windows용 Minecraft Java 런처입니다. 인스턴스별 Minecraft 버전, 모드 로더와 로더 버전, RAM, Java, 콘텐츠를 따로 관리할 수 있습니다.
 
-## 핵심 기능
-- 게임 실행 중심으로 전면 개편한 EasyCraft UI
-- 인스턴스별 Minecraft / 모드 / 세이브 / 설정 분리
-- Vanilla / Fabric / Forge / NeoForge / Quilt
-- Modrinth 인기 콘텐츠 즉시 표시, 검색, 설치, 의존성 확인, 업데이트
-- Iris 설치 시 셰이더 탭 자동 표시
-- Microsoft 로그인 / 로그아웃 / Minecraft 스킨 얼굴 표시
-- 별도 Minecraft worker 프로세스로 실행 안정성 개선
-- 준비 중/실행 중 빠른 강제 중지
-- GitHub Releases 기반 EasyCraft 자동 업데이트
-- 업데이트가 있을 때 해당 GitHub Release 업데이트 내역 바로 열기
-- 업데이트 적용 중 별도의 작은 진행 창 표시
+## v0.4.6
 
-## 0.4.5 업데이트
-`재시작하여 업데이트`를 누르면 작은 EasyCraft 업데이트 창이 별도로 열립니다. 메인 런처가 종료된 뒤에도 이 창은 남아 silent 설치와 재실행 상태를 안내하고, 새 버전의 EasyCraft가 실행되면 자동으로 닫힙니다.
+### 모드 로더 버전 선택
+인스턴스를 만들거나 수정할 때 Fabric / Forge / NeoForge / Quilt를 선택하면 `모드 로더 버전` 항목이 나타납니다. Vanilla에서는 이 항목이 숨겨집니다.
+
+`최신 자동`을 선택하거나 호환되는 특정 로더 버전을 직접 고를 수 있습니다.
+
+- Fabric: Fabric Meta API의 해당 Minecraft 버전 호환 로더 목록
+- Forge: Forge Maven 메타데이터의 해당 Minecraft 버전 빌드
+- NeoForge: NeoForged Maven의 해당 Minecraft 버전 계열 빌드
+- Quilt: Quilt Meta API의 해당 Minecraft 버전 호환 로더 목록
+
+### Minecraft / 로더 자동 업데이트
+인스턴스 설정에서 다음 옵션을 개별적으로 켤 수 있습니다.
+
+- `Minecraft 버전 자동 업데이트`: 게임 실행 전에 Mojang 최신 정식 릴리스를 확인합니다.
+- `모드 로더 자동 업데이트`: 현재 Minecraft 버전과 호환되는 최신 로더를 확인합니다.
+
+Minecraft 버전을 자동으로 올리면 기존 모드의 호환성이 달라질 수 있으므로 Minecraft 자동 업데이트는 기본적으로 꺼져 있습니다. 모드 로더 자동 업데이트는 기본적으로 켜져 있습니다.
+
+### 플레이어 얼굴 표시 수정
+Minecraft 스킨 원본 전체 이미지를 CSS로 축소해서 표시하지 않고, 스킨 파일의 얼굴 영역만 잘라 프로필 이미지로 사용합니다. 이로써 계정 프로필에 스킨 전개도가 표시되던 문제가 해결됩니다.
 
 ## 빌드
-GitHub Actions의 `Build Windows EXE`를 실행하거나 Windows에서 `BUILD_EXE.bat`을 실행하세요.
+GitHub Actions의 `Build Windows EXE` 워크플로를 실행하거나 Windows에서 `BUILD_EXE.bat`을 사용할 수 있습니다.
 
-일반 main 빌드는 Artifact를 만들고 `v0.4.5` 태그 빌드는 GitHub Release에 자동 업데이트용 `latest.yml`, 설치 EXE, blockmap을 게시합니다.
-
-## v0.4.5 UI
-
-0.4.5는 기존 카드형 레이아웃을 버리고 플레이 화면 중심의 몰입형 UI로 다시 디자인했습니다. 홈에서는 선택한 인스턴스와 실행 버튼이 중앙에 크게 표시되고, 인스턴스 목록은 하단 프로필 바로 이동했습니다. 콘텐츠와 설정 화면도 카드 묶음 대신 하나의 연속된 화면 흐름으로 변경했습니다.
+Release 태그는 `v0.4.6`으로 만들고, 자동 업데이트를 위해 Release의 `EasyCraft-Launcher-Setup-0.4.6.exe`, `latest.yml`, `.blockmap` 파일을 유지하세요.

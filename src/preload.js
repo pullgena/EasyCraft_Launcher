@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('launcherAPI', {
   bootstrap: () => ipcRenderer.invoke('bootstrap'),
   fetchVersions: () => ipcRenderer.invoke('fetch-versions'),
+  fetchLoaderVersions: (loader, minecraftVersion) => ipcRenderer.invoke('fetch-loader-versions', loader, minecraftVersion),
+  instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
   loginMicrosoft: () => ipcRenderer.invoke('login-microsoft'),
   logout: () => ipcRenderer.invoke('logout'),
 

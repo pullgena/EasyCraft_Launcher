@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess, nativeImage } = require('electron');
 const { execFile, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -12,7 +12,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.5 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.6 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -40,7 +40,9 @@ function defaultInstanceSettings(baseMemory = null) {
     javaPath: '',
     jvmArgs: '',
     gameArgs: '',
-    autoUpdateContent: true
+    autoUpdateContent: true,
+    autoUpdateMinecraftVersion: false,
+    autoUpdateLoaderVersion: true
   };
 }
 function normalizeInstance(instance, legacyMemory = null) {
@@ -48,6 +50,7 @@ function normalizeInstance(instance, legacyMemory = null) {
   const settings = instance?.settings || {};
   return {
     ...instance,
+    loaderVersion: instance?.loader === 'vanilla' ? null : String(instance?.loaderVersion || 'latest'),
     settings: {
       ...base,
       ...settings,
@@ -103,7 +106,9 @@ function accountSummary(account) {
   return {
     name: account.name || account.username || account.profile?.name || 'Microsoft 계정',
     uuid: account.uuid || account.id || account.profile?.id || null,
-    skinUrl: account._easycraftSkinUrl || null
+    skinUrl: account._easycraftSkinUrl || null,
+    faceUrl: account._easycraftFaceDataUrl || null,
+    faceOverlayUrl: account._easycraftFaceOverlayDataUrl || null
   };
 }
 async function fetchSkinUrlForAccount(account) {
@@ -118,11 +123,34 @@ async function fetchSkinUrlForAccount(account) {
     return /^https?:\/\/textures\.minecraft\.net\/texture\//i.test(String(url || '')) ? url : null;
   } catch { return null; }
 }
+async function skinFaceDataUrl(skinUrl) {
+  if (!skinUrl) return null;
+  try {
+    const res = await fetch(skinUrl, { headers: { 'User-Agent': APP_UA } });
+    if (!res.ok) return null;
+    const image = nativeImage.createFromBuffer(Buffer.from(await res.arrayBuffer()));
+    if (image.isEmpty()) return null;
+    const size = image.getSize();
+    if (size.width < 16 || size.height < 16) return null;
+    // Minecraft 스킨의 정면 얼굴은 항상 좌상단 기준 (8, 8) ~ (15, 15)에 있다.
+    // 원본 스킨 전체를 CSS 배경으로 축소하지 않고 여기서 얼굴 8x8만 잘라 전개도 노출 버그를 막는다.
+    const scale = size.width / 64;
+    const face = image.crop({ x: Math.round(8 * scale), y: Math.round(8 * scale), width: Math.round(8 * scale), height: Math.round(8 * scale) });
+    const overlay = image.crop({ x: Math.round(40 * scale), y: Math.round(8 * scale), width: Math.round(8 * scale), height: Math.round(8 * scale) });
+    return {
+      faceUrl: face.toDataURL(),
+      overlayUrl: overlay.toDataURL()
+    };
+  } catch { return null; }
+}
 async function refreshAccountVisual(account) {
   if (!account) return null;
   const skinUrl = await fetchSkinUrlForAccount(account);
   if (skinUrl) {
     account._easycraftSkinUrl = skinUrl;
+    const face = await skinFaceDataUrl(skinUrl);
+    if (face?.faceUrl) account._easycraftFaceDataUrl = face.faceUrl;
+    if (face?.overlayUrl) account._easycraftFaceOverlayDataUrl = face.overlayUrl;
     await fsp.writeFile(accountPath(), JSON.stringify(account, null, 2), 'utf8').catch(() => {});
   }
   const summary = accountSummary(account);
@@ -135,8 +163,11 @@ async function loadSavedAccount() {
     if (!account.refresh_token) return null;
     const refreshed = await new Microsoft().refresh(account);
     if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'Microsoft 인증 갱신 실패');
-    await fsp.writeFile(accountPath(), JSON.stringify(refreshed, null, 2), 'utf8');
+    refreshed._easycraftSkinUrl = account._easycraftSkinUrl || null;
+    refreshed._easycraftFaceDataUrl = account._easycraftFaceDataUrl || null;
+    refreshed._easycraftFaceOverlayDataUrl = account._easycraftFaceOverlayDataUrl || null;
     refreshed._easycraftRefreshedAt = Date.now();
+    await fsp.writeFile(accountPath(), JSON.stringify(refreshed, null, 2), 'utf8');
     accountRefreshedAt = Date.now();
     currentAccount = refreshed;
     setTimeout(() => refreshAccountVisual(refreshed).catch(() => {}), 50).unref?.();
@@ -180,6 +211,67 @@ async function fetchJson(url, opts = {}) {
   }
   return res.json();
 }
+async function fetchText(url, opts = {}) {
+  const res = await fetch(url, {
+    ...opts,
+    headers: { 'User-Agent': APP_UA, ...(opts.headers || {}) }
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.text();
+}
+function versionParts(value) {
+  return String(value || '').split(/[^0-9A-Za-z]+/).filter(Boolean).map(part => /^\d+$/.test(part) ? Number(part) : part.toLowerCase());
+}
+function compareVersionsDesc(a, b) {
+  const aa = versionParts(a), bb = versionParts(b), n = Math.max(aa.length, bb.length);
+  for (let i = 0; i < n; i++) {
+    const x = aa[i] ?? -1, y = bb[i] ?? -1;
+    if (x === y) continue;
+    if (typeof x === 'number' && typeof y === 'number') return y - x;
+    if (typeof x === 'number') return -1;
+    if (typeof y === 'number') return 1;
+    return String(y).localeCompare(String(x), undefined, { numeric:true, sensitivity:'base' });
+  }
+  return 0;
+}
+function neoForgePrefixForMinecraft(mcVersion) {
+  const parts = String(mcVersion || '').split('.');
+  if (parts[0] === '1' && /^\d+$/.test(parts[1] || '')) return `${parts[1]}.${Number(parts[2] || 0)}.`;
+  if (/^\d+$/.test(parts[0] || '') && /^\d+$/.test(parts[1] || '')) return `${parts[0]}.${parts[1]}.`;
+  return '';
+}
+async function loaderVersionsFor(loader, mcVersion) {
+  loader = String(loader || 'vanilla').toLowerCase();
+  mcVersion = String(mcVersion || '').trim();
+  if (mcVersion === 'latest_release') mcVersion = await latestMinecraftRelease() || mcVersion;
+  if (!mcVersion || loader === 'vanilla') return { latest:null, versions:[] };
+  let versions = [];
+  if (loader === 'fabric') {
+    const rows = await fetchJson(`https://meta.fabricmc.net/v2/versions/loader/${encodeURIComponent(mcVersion)}`);
+    versions = (rows || []).map(row => ({ version:row?.loader?.version, stable:row?.loader?.stable !== false })).filter(x => x.version);
+  } else if (loader === 'quilt') {
+    const rows = await fetchJson(`https://meta.quiltmc.org/v3/versions/loader/${encodeURIComponent(mcVersion)}`);
+    versions = (rows || []).map(row => ({ version:row?.loader?.version || row?.version, stable:row?.loader?.stable !== false && row?.stable !== false })).filter(x => x.version);
+  } else if (loader === 'forge') {
+    const xml = await fetchText('https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml');
+    const all = [...xml.matchAll(/<version>([^<]+)<\/version>/g)].map(m => m[1].trim());
+    const prefix = `${mcVersion}-`;
+    versions = all.filter(v => v.startsWith(prefix)).map(v => ({ version:v.slice(prefix.length), stable:true }));
+  } else if (loader === 'neoforge') {
+    const xml = await fetchText('https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml');
+    const all = [...xml.matchAll(/<version>([^<]+)<\/version>/g)].map(m => m[1].trim());
+    const prefix = neoForgePrefixForMinecraft(mcVersion);
+    versions = all.filter(v => prefix && v.startsWith(prefix)).map(v => ({ version:v, stable:!/-beta|-alpha|-rc/i.test(v) }));
+  }
+  const unique = new Map();
+  for (const item of versions) if (!unique.has(item.version)) unique.set(item.version, item);
+  versions = [...unique.values()].sort((a,b) => (Number(b.stable)-Number(a.stable)) || compareVersionsDesc(a.version,b.version)).slice(0,120);
+  return { latest:versions[0]?.version || null, versions };
+}
+async function latestMinecraftRelease() {
+  const manifest = await fetchJson('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json');
+  return manifest?.latest?.release || null;
+}
 function validateContentType(type) {
   if (!CONTENT_TYPES[type]) throw new Error('지원하지 않는 콘텐츠 종류입니다.');
   return CONTENT_TYPES[type];
@@ -200,6 +292,10 @@ async function ensureInstanceFolders(id) {
     fsp.mkdir(path.join(root, 'saves'), { recursive: true }),
     fsp.mkdir(logsDir(id), { recursive: true })
   ]);
+}
+async function invalidateLoaderInstall(id) {
+  // Minecraft 버전/로더 종류/로더 빌드가 바뀌면 이전 설치 결과를 재사용하지 않는다.
+  await fsp.rm(path.join(gameDir(id), 'loader'), { recursive:true, force:true }).catch(() => {});
 }
 
 ipcMain.handle('bootstrap', async () => {
@@ -222,6 +318,31 @@ ipcMain.handle('fetch-versions', async () => {
   } catch (error) {
     return { latest: 'latest_release', versions: ['latest_release'], error: error.message };
   }
+});
+ipcMain.handle('fetch-loader-versions', async (_event, loader, mcVersion) => {
+  try {
+    const result = await loaderVersionsFor(loader, mcVersion);
+    return { ok:true, loader, minecraftVersion:mcVersion, ...result };
+  } catch (error) {
+    return { ok:false, loader, minecraftVersion:mcVersion, latest:null, versions:[], error:error.message };
+  }
+});
+ipcMain.handle('instance-version-status', async (_event, id) => {
+  try {
+    const { instance:raw } = await getInstance(id);
+    if (!raw) throw new Error('인스턴스를 찾을 수 없습니다.');
+    const instance = normalizeInstance(raw);
+    const latestMinecraft = await latestMinecraftRelease();
+    let loaderInfo = { latest:null, versions:[] };
+    if (instance.loader !== 'vanilla') loaderInfo = await loaderVersionsFor(instance.loader, instance.version);
+    return {
+      ok:true,
+      currentMinecraft:instance.version, latestMinecraft,
+      currentLoader:instance.loaderVersion || null, latestLoader:loaderInfo.latest,
+      minecraftUpdateAvailable:!!latestMinecraft && latestMinecraft !== instance.version,
+      loaderUpdateAvailable:instance.loader !== 'vanilla' && !!loaderInfo.latest && instance.loaderVersion !== 'latest' && loaderInfo.latest !== instance.loaderVersion
+    };
+  } catch (error) { return { ok:false, error:error.message }; }
 });
 ipcMain.handle('login-microsoft', async () => {
   try {
@@ -258,7 +379,8 @@ ipcMain.handle('create-instance', async (_event, input) => {
   if (!name) return { ok: false, error: '인스턴스 이름을 입력해 주세요.' };
   const config = await readConfig();
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
-  const instance = { id, name, version, loader, createdAt: new Date().toISOString(), settings: defaultInstanceSettings(config.memory) };
+  const loaderVersion = loader === 'vanilla' ? null : String(input?.loaderVersion || 'latest').trim();
+  const instance = { id, name, version, loader, loaderVersion, createdAt: new Date().toISOString(), settings: defaultInstanceSettings(config.memory) };
   config.instances.push(instance); config.selectedInstanceId = id;
   await writeConfig(config); await ensureInstanceFolders(id); await writeRegistry(id, []);
   return { ok: true, config, instance };
@@ -286,10 +408,14 @@ ipcMain.handle('update-instance', async (_event, id, patch) => {
   const config = await readConfig();
   const instance = config.instances.find(i => i.id === id);
   if (!instance) return { ok: false, error: '인스턴스를 찾을 수 없습니다.' };
+  const beforeVersion = instance.version, beforeLoader = instance.loader, beforeLoaderVersion = instance.loaderVersion || 'latest';
   if (patch?.name !== undefined) instance.name = cleanInstanceName(patch.name) || instance.name;
   if (patch?.version) instance.version = String(patch.version).trim();
   if (['vanilla', 'fabric', 'forge', 'neoforge', 'quilt'].includes(patch?.loader)) instance.loader = patch.loader;
+  if (instance.loader === 'vanilla') instance.loaderVersion = null;
+  else if (patch?.loaderVersion !== undefined) instance.loaderVersion = String(patch.loaderVersion || 'latest').trim() || 'latest';
   await writeConfig(config);
+  if (beforeVersion !== instance.version || beforeLoader !== instance.loader || beforeLoaderVersion !== (instance.loaderVersion || 'latest')) await invalidateLoaderInstall(id);
   preparedLaunchers.delete(id);
   await fsp.rm(launchReadyMarker(id), { force:true }).catch(() => {});
   return { ok: true, config, instance };
@@ -301,9 +427,12 @@ ipcMain.handle('update-instance-settings', async (_event, id, patch) => {
   if (activeLauncher?.instanceId === id) return { ok: false, error: '게임 실행 중에는 이 인스턴스 설정을 변경할 수 없습니다.' };
 
   const instance = normalizeInstance(config.instances[index], config.memory);
+  const beforeVersion = instance.version, beforeLoader = instance.loader, beforeLoaderVersion = instance.loaderVersion || 'latest';
   if (patch?.name !== undefined) instance.name = cleanInstanceName(patch.name) || instance.name;
   if (patch?.version) instance.version = String(patch.version).trim();
   if (['vanilla', 'fabric', 'forge', 'neoforge', 'quilt'].includes(patch?.loader)) instance.loader = patch.loader;
+  if (instance.loader === 'vanilla') instance.loaderVersion = null;
+  else if (patch?.loaderVersion !== undefined) instance.loaderVersion = String(patch.loaderVersion || 'latest').trim() || 'latest';
 
   const min = Math.max(1, Math.min(32, Number(patch?.memory?.min) || instance.settings.memory.min || 2));
   const max = Math.max(min, Math.min(64, Number(patch?.memory?.max) || instance.settings.memory.max || 6));
@@ -316,10 +445,13 @@ ipcMain.handle('update-instance-settings', async (_event, id, patch) => {
     javaPath: String(patch?.javaPath || '').trim(),
     jvmArgs: String(patch?.jvmArgs || '').trim(),
     gameArgs: String(patch?.gameArgs || '').trim(),
-    autoUpdateContent: patch?.autoUpdateContent !== false
+    autoUpdateContent: patch?.autoUpdateContent !== false,
+    autoUpdateMinecraftVersion: !!patch?.autoUpdateMinecraftVersion,
+    autoUpdateLoaderVersion: patch?.autoUpdateLoaderVersion !== false
   };
   config.instances[index] = instance;
   await writeConfig(config);
+  if (beforeVersion !== instance.version || beforeLoader !== instance.loader || beforeLoaderVersion !== (instance.loaderVersion || 'latest')) await invalidateLoaderInstall(id);
   preparedLaunchers.delete(id);
   await fsp.rm(launchReadyMarker(id), { force:true }).catch(() => {});
   return { ok: true, config, instance };
@@ -836,7 +968,7 @@ ipcMain.handle('modrinth-update-all', async (_event, id) => {
 
 function launchReadyMarker(id) { return path.join(instanceDir(id), 'launch-ready.json'); }
 async function writeLaunchReadyMarker(id, instance) {
-  await fsp.writeFile(launchReadyMarker(id), JSON.stringify({ version: instance.version, loader: instance.loader, at: new Date().toISOString() }), 'utf8').catch(() => {});
+  await fsp.writeFile(launchReadyMarker(id), JSON.stringify({ version: instance.version, loader: instance.loader, loaderVersion: instance.loaderVersion || null, at: new Date().toISOString() }), 'utf8').catch(() => {});
 }
 
 async function appendLauncherLog(id, text) {
@@ -889,6 +1021,8 @@ async function ensureFreshAccountForLaunch() {
     const refreshed = await new Microsoft().refresh(currentAccount);
     if (!refreshed || refreshed.error) return false;
     refreshed._easycraftSkinUrl = currentAccount._easycraftSkinUrl || null;
+    refreshed._easycraftFaceDataUrl = currentAccount._easycraftFaceDataUrl || null;
+    refreshed._easycraftFaceOverlayDataUrl = currentAccount._easycraftFaceOverlayDataUrl || null;
     refreshed._easycraftRefreshedAt = Date.now();
     currentAccount = refreshed; accountRefreshedAt = Date.now();
     await fsp.writeFile(accountPath(), JSON.stringify(refreshed, null, 2), 'utf8');
@@ -1036,6 +1170,51 @@ ipcMain.handle('stop-game', async (_event, id) => {
   return { ok:true, immediate:true, preparingCancelled:true };
 });
 
+async function applyAutomaticInstanceVersionUpdates(id, config, rawInstance) {
+  let instance = normalizeInstance(rawInstance, config.memory);
+  const changes = [];
+  let changed = false;
+  let minecraftChanged = false;
+  try {
+    if (instance.settings.autoUpdateMinecraftVersion) {
+      const latest = await latestMinecraftRelease();
+      if (latest && latest !== instance.version) {
+        changes.push(`Minecraft ${instance.version} → ${latest}`);
+        instance.version = latest;
+        changed = true;
+        minecraftChanged = true;
+      }
+    }
+    if (instance.loader !== 'vanilla' && (instance.settings.autoUpdateLoaderVersion || minecraftChanged)) {
+      const info = await loaderVersionsFor(instance.loader, instance.version);
+      if (info.latest) {
+        const available = new Set((info.versions || []).map(v => v.version));
+        const current = instance.loaderVersion || 'latest';
+        const mustRepair = minecraftChanged && current !== 'latest' && !available.has(current);
+        if (instance.settings.autoUpdateLoaderVersion || mustRepair) {
+          if (current !== info.latest) changes.push(`${instance.loader} ${current} → ${info.latest}`);
+          instance.loaderVersion = info.latest;
+          changed = changed || current !== info.latest;
+        }
+      }
+    }
+  } catch (error) {
+    // 자동 버전 확인 서버가 잠시 실패해도 사용자가 기존 버전으로 게임을 실행할 수 있게 한다.
+    send('status', { kind:'info', text:`버전 자동 업데이트 확인을 건너뛰었습니다: ${error.message}` });
+  }
+  if (changed) {
+    const index = config.instances.findIndex(i => i.id === id);
+    if (index >= 0) {
+      config.instances[index] = instance;
+      await writeConfig(config);
+      await invalidateLoaderInstall(id);
+      preparedLaunchers.delete(id);
+      await fsp.rm(launchReadyMarker(id), { force:true }).catch(() => {});
+    }
+  }
+  return { config, instance, changes };
+}
+
 ipcMain.handle('launch-game', async (_event, id) => {
   if (activeLauncher) return { ok:false, error:'이미 Minecraft를 실행하고 있습니다.' };
   let summary = accountSummary(currentAccount);
@@ -1043,9 +1222,11 @@ ipcMain.handle('launch-game', async (_event, id) => {
   if (!summary || !currentAccount) return { ok:false, needLogin:true, error:'먼저 Microsoft 계정으로 로그인해 주세요.' };
   if (!(await ensureFreshAccountForLaunch())) return { ok:false, needLogin:true, error:'Microsoft 로그인 정보가 만료되었습니다. 다시 로그인해 주세요.' };
 
-  const { config, instance: rawInstance } = await getInstance(id);
+  let { config, instance: rawInstance } = await getInstance(id);
   if (!rawInstance) return { ok:false, error:'실행할 인스턴스를 찾을 수 없습니다.' };
-  const instance = normalizeInstance(rawInstance, config.memory);
+  const automatic = await applyAutomaticInstanceVersionUpdates(id, config, rawInstance);
+  config = automatic.config;
+  const instance = automatic.instance;
   await ensureInstanceFolders(id);
   const settings = instance.settings;
 
@@ -1073,7 +1254,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
     loader: {
       enable: loaderEnabled,
       type: loaderEnabled ? instance.loader : null,
-      build: 'latest',
+      build: loaderEnabled ? (instance.loaderVersion || 'latest') : 'latest',
       path: loaderEnabled ? `loader/${instance.loader}` : './loader'
     },
     java: { path: settings.javaPath || null, type:'jre' },
@@ -1098,10 +1279,10 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.5 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.6 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
-  return { ok:true, isolatedWorker:true };
+  return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes };
 });
 
 // ---------- EasyCraft 자체 자동 업데이트 ----------
