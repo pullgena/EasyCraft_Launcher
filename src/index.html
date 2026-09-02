@@ -8,141 +8,126 @@
 </head>
 <body>
   <div class="app">
-    <aside class="sidebar">
-      <div class="brand-zone">
-        <div class="brand-icon"><img src="app-icon.png" alt="EasyCraft"></div>
-        <div class="brand-copy"><strong>EasyCraft</strong><span>LAUNCHER</span></div>
-      </div>
-
+    <aside class="rail">
+      <div class="rail-logo"><img src="app-icon.png" alt="EasyCraft"></div>
       <nav class="nav" aria-label="메인 메뉴">
-        <button class="nav-btn active" data-view="home"><span class="nav-symbol">▶</span><span>플레이</span></button>
-        <button class="nav-btn" data-view="content"><span class="nav-symbol">◆</span><span>콘텐츠</span></button>
-        <button class="nav-btn" data-view="settings"><span class="nav-symbol">⚙</span><span>설정</span></button>
+        <button class="nav-btn active" data-view="home" title="플레이"><span>▶</span><em>플레이</em></button>
+        <button class="nav-btn" data-view="content" title="콘텐츠"><span>◆</span><em>콘텐츠</em></button>
+        <button class="nav-btn" data-view="settings" title="설정"><span>⚙</span><em>설정</em></button>
       </nav>
-
-      <div class="sidebar-fill"></div>
-      <div class="account-panel" id="accountPanel">
+      <div class="rail-space"></div>
+      <button class="account-orb" id="accountPanel" title="계정">
         <div class="avatar" id="accountAvatar">?</div>
-        <div class="account-copy"><strong id="accountName">로그인 필요</strong><span id="accountSub">Microsoft 계정</span></div>
-        <button class="mini-icon hidden" id="railLogoutBtn" title="로그아웃">↪</button>
-      </div>
-      <button class="btn sidebar-login" id="railLoginBtn">Microsoft 로그인</button>
+        <div class="account-hover"><strong id="accountName">로그인 필요</strong><span id="accountSub">Microsoft 계정</span></div>
+      </button>
+      <button class="rail-account-action" id="railLoginBtn">로그인</button>
+      <button class="rail-account-action hidden" id="railLogoutBtn">로그아웃</button>
       <div class="version-foot" id="versionFoot">EasyCraft</div>
     </aside>
 
-    <div class="main-shell">
-      <header class="topbar">
-        <div class="title-wrap">
-          <p class="kicker" id="pageKicker">EASYCRAFT PLAY</p>
+    <section class="shell">
+      <header class="floating-header">
+        <div>
+          <span class="kicker" id="pageKicker">EASYCRAFT PLAY</span>
           <h1 id="pageTitle">Minecraft를 시작하세요</h1>
         </div>
-        <div class="top-actions">
-          <div class="selected-chip" id="selectedChip">인스턴스 없음</div>
-          <button class="circle-btn" id="openInstanceFolderBtn" title="선택한 인스턴스 폴더 열기">↗</button>
+        <div class="header-side">
+          <button class="selected-chip" id="selectedChip">인스턴스 없음</button>
+          <button class="icon-button" id="openInstanceFolderBtn" title="인스턴스 폴더 열기">↗</button>
         </div>
       </header>
 
       <main class="workspace">
-        <section class="view active" id="view-home">
-          <div class="welcome-line"><span class="eyebrow">WELCOME BACK</span><span class="welcome-sep"></span><span>원하는 프로필을 선택하고 바로 플레이하세요.</span></div>
+        <section class="view active home-view" id="view-home">
+          <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div><div class="grid-haze"></div>
 
-          <article class="launch-stage">
-            <div class="stage-decoration" aria-hidden="true">
-              <span class="pixel p1"></span><span class="pixel p2"></span><span class="pixel p3"></span><span class="pixel p4"></span>
-              <div class="orb orb-a"></div><div class="orb orb-b"></div>
+          <div class="home-center">
+            <div class="instance-label" id="heroBadge">새 인스턴스를 만들어 시작하세요</div>
+            <h2 class="hero-title" id="heroName">Minecraft를 준비해 볼까요?</h2>
+            <p class="hero-meta" id="heroMeta">버전과 로더를 고르고, 원하는 모드를 바로 설치해 플레이할 수 있습니다.</p>
+            <button class="play-main" id="playBtn"><span class="play-symbol">▶</span><span>게임 실행</span></button>
+            <div class="hero-links">
+              <button id="heroSettingsBtn">인스턴스 설정</button>
+              <span></span>
+              <button id="heroContentBtn">콘텐츠 찾기</button>
             </div>
-            <div class="launch-copy">
-              <div class="hero-badge" id="heroBadge">새 인스턴스를 만들어 시작하세요</div>
-              <h2 id="heroName">Minecraft를 준비해 볼까요?</h2>
-              <p id="heroMeta">버전, 모드 로더, 콘텐츠를 인스턴스별로 깔끔하게 관리할 수 있습니다.</p>
-              <div class="launch-actions">
-                <button class="play-main" id="playBtn"><span>▶</span><strong>게임 실행</strong></button>
-                <button class="ghost-action" id="heroSettingsBtn"><span>⚙</span>인스턴스 설정</button>
-                <button class="ghost-action" id="heroContentBtn"><span>◆</span>콘텐츠 찾기</button>
-              </div>
-            </div>
-            <div class="launch-side">
-              <div class="side-label">QUICK STATUS</div>
-              <div class="status-card"><span class="status-dot"></span><div><strong>PLAY READY</strong><small>선택한 인스턴스를 바로 실행합니다.</small></div></div>
-              <div class="stage-tip">모드와 리소스팩은 <b>콘텐츠</b>에서 바로 설치할 수 있습니다.</div>
-            </div>
-          </article>
+          </div>
 
-          <section class="profiles-section">
-            <div class="section-head">
-              <div><span class="eyebrow">PROFILES</span><h2>내 인스턴스</h2><p>플레이할 환경을 선택하세요. 각 프로필의 월드와 모드는 서로 분리됩니다.</p></div>
-              <button class="btn primary" id="newInstanceBtn">＋ 새 인스턴스</button>
+          <div class="content-shortcuts" aria-label="빠른 콘텐츠">
+            <button class="quick-card" data-content="mods"><b>MODS</b><span>모드 찾기</span><i>→</i></button>
+            <button class="quick-card" data-content="resourcepacks"><b>PACKS</b><span>리소스팩</span><i>→</i></button>
+            <button class="quick-card hidden" id="shaderQuick" data-content="shaderpacks"><b>SHADERS</b><span>셰이더</span><i>→</i></button>
+          </div>
+
+          <div class="profiles-dock">
+            <div class="dock-head">
+              <div><span>PROFILES</span><strong>플레이할 인스턴스</strong></div>
+              <button id="newInstanceBtn">＋ 새 인스턴스</button>
             </div>
             <div class="instance-grid" id="instanceGrid"></div>
-          </section>
-
-          <section class="discover-section">
-            <div class="section-head compact"><div><span class="eyebrow">DISCOVER</span><h2>빠른 콘텐츠</h2></div></div>
-            <div class="quick-grid">
-              <button class="quick-card" data-content="mods"><span class="quick-icon">M</span><div><strong>모드</strong><p>호환되는 인기 Modrinth 모드를 바로 확인하세요.</p></div><span class="arrow">→</span></button>
-              <button class="quick-card" data-content="resourcepacks"><span class="quick-icon">R</span><div><strong>리소스팩</strong><p>런처 안에서 찾아보고 바로 적용하세요.</p></div><span class="arrow">→</span></button>
-              <button class="quick-card hidden" id="shaderQuick" data-content="shaderpacks"><span class="quick-icon">S</span><div><strong>셰이더</strong><p>Iris가 설치된 인스턴스에 바로 추가하세요.</p></div><span class="arrow">→</span></button>
-            </div>
-          </section>
+          </div>
         </section>
 
-        <section class="view" id="view-content">
-          <div class="content-top">
-            <div><span class="eyebrow">MODRINTH</span><h2>콘텐츠 라이브러리</h2><p id="contentContext">선택한 인스턴스에 바로 설치합니다.</p></div>
-            <div class="head-actions"><button class="btn subtle" id="contentUpdatesBtn">업데이트 확인</button><button class="btn subtle" id="contentFolderBtn">폴더 열기</button></div>
+        <section class="view content-view" id="view-content">
+          <div class="flat-head">
+            <div><span class="kicker">MODRINTH</span><h2>콘텐츠</h2><p id="contentContext">선택한 인스턴스에 바로 설치합니다.</p></div>
+            <div class="flat-actions"><button id="contentUpdatesBtn">업데이트 확인</button><button id="contentFolderBtn">폴더 열기</button></div>
           </div>
+
           <div class="content-tabs" id="contentTabs">
             <button class="content-tab active" data-type="mods">모드</button>
             <button class="content-tab" data-type="resourcepacks">리소스팩</button>
             <button class="content-tab hidden" id="shaderTab" data-type="shaderpacks">셰이더</button>
           </div>
 
-          <div class="content-layout">
-            <section class="market-panel panel">
-              <div class="market-toolbar">
-                <div><h3>Modrinth에서 찾기</h3><p>현재 Minecraft 버전과 로더에 맞는 인기 콘텐츠를 먼저 보여줍니다.</p></div>
-                <div class="search-row"><input id="searchInput" class="input" placeholder="Sodium, Iris, JEI 등 검색" /><button class="btn primary" id="searchBtn">검색</button></div>
-              </div>
-              <div class="update-strip hidden" id="contentUpdateStrip"><span id="contentUpdateText"></span><button class="btn primary small" id="updateAllContentBtn">모두 업데이트</button></div>
+          <div class="library-flow">
+            <section class="market-panel">
+              <div class="library-title"><div><h3>Modrinth에서 찾기</h3><p>호환되는 인기 콘텐츠를 바로 보여드립니다.</p></div></div>
+              <div class="search-row"><input id="searchInput" class="input search-input" placeholder="모드 이름 검색" /><button id="searchBtn" class="search-submit">검색</button></div>
+              <div class="update-strip hidden" id="contentUpdateStrip"><span id="contentUpdateText"></span><button id="updateAllContentBtn">모두 업데이트</button></div>
               <div class="result-list" id="searchResults"><div class="empty">Modrinth 인기 콘텐츠를 불러오는 중…</div></div>
             </section>
 
-            <aside class="installed-panel panel">
-              <div class="panel-title"><div><span class="eyebrow">INSTALLED</span><h3>설치된 콘텐츠</h3><p>실제 인스턴스 폴더에 적용된 항목입니다.</p></div><button class="circle-btn small" id="pickLocalContentBtn" title="직접 파일 추가">＋</button></div>
+            <aside class="installed-panel">
+              <div class="installed-head"><div><span>INSTALLED</span><h3>설치됨</h3></div><button id="pickLocalContentBtn" title="직접 파일 추가">＋</button></div>
               <div class="installed-list" id="installedList"><div class="empty">설치된 콘텐츠가 없습니다.</div></div>
             </aside>
           </div>
         </section>
 
-        <section class="view" id="view-settings">
-          <div class="settings-title"><span class="eyebrow">SETTINGS</span><h2>EasyCraft 설정</h2><p>계정, 인스턴스, 업데이트와 데이터를 관리합니다.</p></div>
-          <div class="settings-grid">
-            <article class="settings-card panel account-settings">
-              <span class="setting-label">ACCOUNT</span><h3 id="settingsAccountName">Microsoft 계정이 연결되지 않았습니다.</h3><p>Minecraft Java Edition을 보유한 계정으로 로그인하세요.</p>
-              <div class="row-actions"><button class="btn primary" id="settingsLoginBtn">로그인</button><button class="btn danger hidden" id="settingsLogoutBtn">로그아웃</button></div>
-            </article>
-            <article class="settings-card panel">
-              <span class="setting-label">INSTANCE</span><h3 id="settingsInstanceName">인스턴스 없음</h3><p>RAM, 해상도, Java, 버전과 로더를 현재 프로필에만 적용합니다.</p>
-              <button class="btn subtle" id="settingsInstanceBtn">인스턴스 설정</button>
-            </article>
-            <article class="settings-card panel update-setting wide">
-              <div><span class="setting-label">UPDATE</span><h3 id="updateStatusTitle">업데이트 상태 확인 중</h3><p id="updateStatusText">프로그램을 시작할 때 최신 버전을 확인합니다.</p><div class="thin-progress"><span id="updateProgress"></span></div></div>
-              <div class="row-actions"><button class="btn subtle hidden" id="settingsReleaseNotesBtn">업데이트 내역 보기</button><button class="btn subtle" id="manualUpdateCheckBtn">업데이트 확인</button><button class="btn primary hidden" id="settingsUpdateActionBtn">업데이트</button></div>
-            </article>
-            <article class="settings-card panel">
-              <span class="setting-label">FILES</span><h3>인스턴스 파일</h3><p>선택한 인스턴스의 Minecraft 폴더를 Windows 탐색기로 엽니다.</p>
-              <button class="btn subtle" id="settingsOpenFolderBtn">폴더 열기</button>
-            </article>
+        <section class="view settings-view" id="view-settings">
+          <div class="flat-head settings-heading"><div><span class="kicker">SETTINGS</span><h2>설정</h2><p>필요한 것만 빠르게 관리하세요.</p></div></div>
+          <div class="settings-stream">
+            <section class="setting-row">
+              <div class="setting-index">01</div>
+              <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">Microsoft 계정이 연결되지 않았습니다.</h3><p>Minecraft Java Edition 계정을 연결합니다.</p></div>
+              <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn">로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn">로그아웃</button></div>
+            </section>
+            <section class="setting-row">
+              <div class="setting-index">02</div>
+              <div class="setting-copy"><span>INSTANCE</span><h3 id="settingsInstanceName">인스턴스 없음</h3><p>RAM, Java, 해상도, 버전과 모드 로더를 설정합니다.</p></div>
+              <div class="setting-actions"><button class="setting-button" id="settingsInstanceBtn">인스턴스 설정</button></div>
+            </section>
+            <section class="setting-row update-row">
+              <div class="setting-index">03</div>
+              <div class="setting-copy"><span>UPDATE</span><h3 id="updateStatusTitle">업데이트 상태 확인 중</h3><p id="updateStatusText">프로그램을 시작할 때 최신 버전을 확인합니다.</p><div class="thin-progress"><span id="updateProgress"></span></div></div>
+              <div class="setting-actions wrap"><button class="setting-button hidden" id="settingsReleaseNotesBtn">업데이트 내역 보기</button><button class="setting-button" id="manualUpdateCheckBtn">업데이트 확인</button><button class="setting-button primary hidden" id="settingsUpdateActionBtn">업데이트</button></div>
+            </section>
+            <section class="setting-row">
+              <div class="setting-index">04</div>
+              <div class="setting-copy"><span>FILES</span><h3>인스턴스 파일</h3><p>현재 인스턴스의 Minecraft 폴더를 엽니다.</p></div>
+              <div class="setting-actions"><button class="setting-button" id="settingsOpenFolderBtn">폴더 열기</button></div>
+            </section>
           </div>
         </section>
       </main>
-    </div>
+    </section>
   </div>
 
   <div class="startup-gate" id="startupGate">
     <div class="gate-card">
       <div class="gate-logo"><img src="app-icon.png" alt="EasyCraft"></div>
-      <div id="gateChecking"><span class="eyebrow">EASYCRAFT UPDATE</span><h2>최신 버전을 확인하고 있습니다</h2><p>잠시만 기다려 주세요.</p><div class="loader-line"><span></span></div></div>
+      <div id="gateChecking"><span class="kicker">EASYCRAFT UPDATE</span><h2>최신 버전을 확인하고 있습니다</h2><p>잠시만 기다려 주세요.</p><div class="loader-line"><span></span></div></div>
       <div class="hidden" id="gateAvailable">
         <span class="gate-badge">NEW VERSION</span><h2 id="gateUpdateTitle">EasyCraft 업데이트가 있습니다</h2><p id="gateUpdateDescription">최신 버전으로 업데이트하시겠어요?</p>
         <div class="gate-progress hidden" id="gateProgressWrap"><span id="gateProgress"></span></div>
