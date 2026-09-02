@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess } = require('electron');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
@@ -12,7 +12,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.4 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.5 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -1098,7 +1098,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.4 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.5 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true };
@@ -1228,6 +1228,86 @@ function initAutoUpdater() {
   }
 }
 
+
+
+async function startUpdateProgressHelper(expectedVersion) {
+  if (process.platform !== 'win32') return false;
+  try {
+    const helperDir = path.join(app.getPath('temp'), 'EasyCraft-Update');
+    await fsp.mkdir(helperDir, { recursive: true });
+    const helperPath = path.join(helperDir, 'easycraft-update-progress.ps1');
+    const script = String.raw`param(
+  [Parameter(Mandatory=$true)][int]$ParentPid,
+  [Parameter(Mandatory=$true)][string]$ExePath,
+  [Parameter(Mandatory=$true)][string]$ExpectedVersion
+)
+$ErrorActionPreference = 'SilentlyContinue'
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+[xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="EasyCraft 업데이트" Width="390" Height="190" ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen" Topmost="True" ShowInTaskbar="True"
+        Background="#0B1016" Foreground="#F4F7FB">
+  <Border BorderBrush="#273342" BorderThickness="1" CornerRadius="14" Background="#101720" Padding="22">
+    <Grid>
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <TextBlock Grid.Row="0" Text="EASYCRAFT UPDATE" Foreground="#42E48D" FontWeight="Bold" FontSize="10"/>
+      <TextBlock Grid.Row="1" Name="TitleText" Text="업데이트를 준비하고 있습니다" FontWeight="SemiBold" FontSize="17" Margin="0,11,0,5"/>
+      <TextBlock Grid.Row="2" Name="StatusText" Text="EasyCraft를 안전하게 종료하는 중입니다." Foreground="#8D9AAA" FontSize="11" Margin="0,0,0,15"/>
+      <ProgressBar Grid.Row="3" Name="Progress" Height="5" IsIndeterminate="True" Foreground="#42E48D" Background="#080D12"/>
+    </Grid>
+  </Border>
+</Window>
+"@
+$reader = New-Object System.Xml.XmlNodeReader $xaml
+$window = [Windows.Markup.XamlReader]::Load($reader)
+$title = $window.FindName('TitleText')
+$status = $window.FindName('StatusText')
+$progress = $window.FindName('Progress')
+$window.Show() | Out-Null
+function Pump { $window.Dispatcher.Invoke([action]{}, [Windows.Threading.DispatcherPriority]::Background) }
+function Set-State([string]$t,[string]$s) { $title.Text=$t; $status.Text=$s; Pump }
+$deadline = (Get-Date).AddMinutes(5)
+Set-State 'EasyCraft 종료 중' '업데이트 설치를 위해 실행 중인 런처를 닫고 있습니다.'
+while ((Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 220; Pump }
+Set-State '업데이트 설치 중' ("EasyCraft v" + $ExpectedVersion + " 파일을 적용하고 있습니다.")
+Start-Sleep -Milliseconds 550
+$newProcess = $null
+while ((Get-Date) -lt $deadline) {
+  $newProcess = Get-Process | Where-Object { $_.Id -ne $ParentPid -and $_.Path -eq $ExePath } | Select-Object -First 1
+  if ($newProcess) { break }
+  Start-Sleep -Milliseconds 350
+  Pump
+}
+if ($newProcess) {
+  $progress.IsIndeterminate = $false; $progress.Value = 100
+  Set-State '업데이트 완료' ("EasyCraft v" + $ExpectedVersion + "을 실행했습니다.")
+  Start-Sleep -Milliseconds 1200
+} else {
+  $progress.IsIndeterminate = $false; $progress.Value = 100
+  Set-State '업데이트 처리 완료' 'EasyCraft가 자동으로 열리지 않으면 바탕화면에서 다시 실행해 주세요.'
+  Start-Sleep -Seconds 4
+}
+$window.Close()
+`;
+    await fsp.writeFile(helperPath, script, 'utf8');
+    const child = spawn('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+      '-File', helperPath,
+      '-ParentPid', String(process.pid),
+      '-ExePath', process.execPath,
+      '-ExpectedVersion', String(expectedVersion || app.getVersion())
+    ], { detached: true, windowsHide: true, stdio: 'ignore' });
+    child.unref();
+    return true;
+  } catch (error) {
+    console.warn('Update progress helper failed:', error);
+    return false;
+  }
+}
+
 ipcMain.handle('check-launcher-update', async () => checkForLauncherUpdate({ manual: true }));
 ipcMain.handle('download-launcher-update', async () => {
   if (!autoUpdaterInstance) return { ok: false, error: '업데이트 기능이 준비되지 않았습니다.' };
@@ -1242,7 +1322,14 @@ ipcMain.handle('install-launcher-update', async () => {
   if (!autoUpdaterInstance || launcherUpdateState.state !== 'downloaded') {
     return { ok: false, error: '다운로드가 완료된 업데이트가 없습니다.' };
   }
-  setImmediate(() => autoUpdaterInstance.quitAndInstall(true, true)); // isSilent=true: 업데이트 시 NSIS 설치 화면을 띄우지 않습니다.
+  const targetVersion = launcherUpdateState.availableVersion || '새 버전';
+  setLauncherUpdateState({ state: 'installing', availableVersion: launcherUpdateState.availableVersion, percent: 100, error: null });
+  await startUpdateProgressHelper(targetVersion);
+  // 작은 업데이트 진행 창이 화면에 먼저 뜬 뒤 silent NSIS 설치를 시작합니다.
+  setTimeout(() => {
+    try { autoUpdaterInstance.quitAndInstall(true, true); }
+    catch (error) { console.error('quitAndInstall failed:', error); }
+  }, 850);
   return { ok: true };
 });
 

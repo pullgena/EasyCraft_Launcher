@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.4",
-  "description": "EasyCraft Launcher 0.4.4 - GitHub Release notes access directly from in-app update prompts",
+  "version": "0.4.5",
+  "description": "EasyCraft Launcher 0.4.5 - redesigned game launcher UI and visible silent-update progress window",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
