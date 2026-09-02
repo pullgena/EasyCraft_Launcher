@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   checkLauncherUpdate: () => ipcRenderer.invoke('check-launcher-update'),
   downloadLauncherUpdate: () => ipcRenderer.invoke('download-launcher-update'),
   installLauncherUpdate: () => ipcRenderer.invoke('install-launcher-update'),
+  openLauncherReleaseNotes: version => ipcRenderer.invoke('open-launcher-release-notes', version),
 
   getFilePath: file => webUtils.getPathForFile(file),
 

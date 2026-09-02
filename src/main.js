@@ -12,7 +12,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.3 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.4 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -1098,14 +1098,14 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.3 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.4 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true };
 });
 
 // ---------- EasyCraft 자체 자동 업데이트 ----------
-let launcherUpdateState = { state: 'idle', currentVersion: app.getVersion(), availableVersion: null, percent: 0, repository: null };
+let launcherUpdateState = { state: 'idle', currentVersion: app.getVersion(), availableVersion: null, percent: 0, repository: null, releaseUrl: null };
 let autoUpdaterInstance = null;
 let launcherUpdateTimer = null;
 let updateRepository = null;
@@ -1117,6 +1117,12 @@ function readBuildInfo() {
 function setLauncherUpdateState(patch) {
   launcherUpdateState = { ...launcherUpdateState, ...patch, currentVersion: app.getVersion() };
   send('launcher-update-state', launcherUpdateState);
+}
+function releasePageUrl(version = launcherUpdateState.availableVersion) {
+  if (!updateRepository || !version) return null;
+  const safeVersion = String(version).trim().replace(/^v/i, '');
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(safeVersion)) return null;
+  return `https://github.com/${updateRepository}/releases/tag/v${encodeURIComponent(safeVersion)}`;
 }
 function friendlyUpdateError(error, repository = updateRepository) {
   const raw = String(error?.message || error || '').trim();
@@ -1210,10 +1216,10 @@ function initAutoUpdater() {
     setLauncherUpdateState({ state: 'idle', repository: updateRepository, error: null });
     // checking-for-update is intentionally not forced into a popup in the renderer.
     autoUpdater.on('checking-for-update', () => setLauncherUpdateState({ state: 'checking', percent: 0, error: null }));
-    autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0, error: null, startupPrompt: true }));
-    autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0, error: null, startupPrompt: false }));
+    autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0, error: null, startupPrompt: true, releaseUrl: releasePageUrl(info2.version) }));
+    autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0, error: null, startupPrompt: false, releaseUrl: null }));
     autoUpdater.on('download-progress', p => setLauncherUpdateState({ state: 'downloading', percent: Math.round(p.percent || 0), error: null }));
-    autoUpdater.on('update-downloaded', info2 => setLauncherUpdateState({ state: 'downloaded', availableVersion: info2.version, percent: 100, error: null }));
+    autoUpdater.on('update-downloaded', info2 => setLauncherUpdateState({ state: 'downloaded', availableVersion: info2.version, percent: 100, error: null, releaseUrl: releasePageUrl(info2.version) }));
     autoUpdater.on('error', error => setLauncherUpdateState({ state: 'error', error: friendlyUpdateError(error) }));
 
     scheduleAutomaticUpdateChecks();
@@ -1238,4 +1244,15 @@ ipcMain.handle('install-launcher-update', async () => {
   }
   setImmediate(() => autoUpdaterInstance.quitAndInstall(true, true)); // isSilent=true: 업데이트 시 NSIS 설치 화면을 띄우지 않습니다.
   return { ok: true };
+});
+
+ipcMain.handle('open-launcher-release-notes', async (_event, version) => {
+  const url = releasePageUrl(version);
+  if (!url) return { ok: false, error: '업데이트 내역 주소를 만들 수 없습니다.' };
+  try {
+    await shell.openExternal(url);
+    return { ok: true, url };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || 'GitHub Release 페이지를 열지 못했습니다.') };
+  }
 });
