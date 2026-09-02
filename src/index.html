@@ -84,12 +84,23 @@
             <section class="market-panel">
               <div class="library-title"><div><h3>Modrinth에서 찾기</h3><p>호환되는 인기 콘텐츠를 바로 보여드립니다.</p></div></div>
               <div class="search-row"><input id="searchInput" class="input search-input" placeholder="모드 이름 검색" /><button id="searchBtn" class="search-submit">검색</button></div>
-              <div class="update-strip hidden" id="contentUpdateStrip"><span id="contentUpdateText"></span><button id="updateAllContentBtn">모두 업데이트</button></div>
+              <div class="update-strip hidden" id="contentUpdateStrip"><span id="contentUpdateText"></span></div>
               <div class="result-list" id="searchResults"><div class="empty">Modrinth 인기 콘텐츠를 불러오는 중…</div></div>
             </section>
 
             <aside class="installed-panel">
-              <div class="installed-head"><div><span>INSTALLED</span><h3>설치됨</h3></div><button id="pickLocalContentBtn" title="직접 파일 추가">＋</button></div>
+              <div class="installed-head"><div><span>INSTALLED</span><h3>설치됨 <em id="installedCount">0</em></h3></div><button id="pickLocalContentBtn" title="직접 파일 추가">＋</button></div>
+              <div class="installed-tools" id="installedTools">
+                <label class="bulk-check"><input type="checkbox" id="selectAllInstalled" /><span>전체 선택</span></label>
+                <div class="bulk-buttons">
+                  <button id="updateSelectedContentBtn" disabled>선택 업데이트</button>
+                  <button id="deleteSelectedContentBtn" class="danger" disabled>선택 삭제</button>
+                </div>
+                <div class="all-buttons">
+                  <button id="updateAllContentBtn">전체 업데이트</button>
+                  <button id="deleteAllContentBtn" class="danger">전체 삭제</button>
+                </div>
+              </div>
               <div class="installed-list" id="installedList"><div class="empty">설치된 콘텐츠가 없습니다.</div></div>
             </aside>
           </div>
@@ -160,6 +171,15 @@
       <label>Java 경로 <small>비워두면 EasyCraft가 자동으로 준비합니다.</small></label><div class="path-row"><input class="input" id="editJavaPath" placeholder="자동" /><button class="btn subtle" id="pickJavaBtn">찾기</button></div>
       <div class="advanced"><details><summary>고급 실행 옵션</summary><label>JVM 옵션 <small>한 줄에 하나</small></label><textarea class="input area" id="editJvmArgs"></textarea><label>게임 옵션 <small>한 줄에 하나</small></label><textarea class="input area" id="editGameArgs"></textarea></details></div>
       <div class="modal-actions split"><button class="btn danger" id="deleteInstanceBtn">인스턴스 삭제</button><div><button class="btn subtle" data-close="instanceModal">취소</button><button class="btn primary" id="saveInstanceBtn">저장</button></div></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="dependencyModal">
+    <div class="modal-card dependency-card">
+      <div class="modal-head"><div><span class="setting-label">REQUIRED MODS</span><h2>필수 모드가 필요해요</h2></div><button class="close-btn" id="dependencyCloseBtn">×</button></div>
+      <p class="dependency-message" id="dependencyMessage"></p>
+      <div class="dependency-list" id="dependencyList"></div>
+      <div class="modal-actions"><button class="btn subtle" id="dependencyCancelBtn">아니요</button><button class="btn primary dependency-yes" id="dependencyConfirmBtn">예, 같이 설치</button></div>
     </div>
   </div>
 

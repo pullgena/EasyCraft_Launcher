@@ -12,7 +12,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.7 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.8 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -601,7 +601,7 @@ async function uninstallManagedProject(id, projectId) {
   await writeRegistry(id, registry);
   return { ok: true };
 }
-ipcMain.handle('delete-content', async (_event, id, type, name) => {
+async function deleteContentEntry(id, type, name) {
   const folder = targetFolder(id, type); const safe = path.basename(name);
   const registry = await readRegistry(id);
   const raw = safe.endsWith('.disabled') ? safe.slice(0, -9) : safe;
@@ -609,6 +609,49 @@ ipcMain.handle('delete-content', async (_event, id, type, name) => {
   if (managed) return uninstallManagedProject(id, managed.projectId);
   await fsp.rm(path.join(folder, safe), { force: true });
   return { ok: true };
+}
+ipcMain.handle('delete-content', async (_event, id, type, name) => deleteContentEntry(id, type, name));
+ipcMain.handle('delete-content-batch', async (_event, id, type, names) => {
+  try {
+    validateContentType(type);
+    const unique = [...new Set((Array.isArray(names) ? names : []).map(x => path.basename(String(x || ''))).filter(Boolean))];
+    let count = 0, retained = 0;
+    for (const name of unique) {
+      const result = await deleteContentEntry(id, type, name);
+      if (!result?.ok) throw new Error(result?.error || `${name} 삭제 실패`);
+      count++;
+      if (result.retainedAsDependency) retained++;
+    }
+    return { ok: true, count, retained };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
+ipcMain.handle('delete-all-content', async (_event, id, type) => {
+  try {
+    const folder = targetFolder(id, type); await fsp.mkdir(folder, { recursive: true });
+    const meta = validateContentType(type);
+    const names = (await fsp.readdir(folder)).filter(name => {
+      const raw = name.endsWith('.disabled') ? name.slice(0, -9) : name;
+      return meta.extensions.includes(path.extname(raw).toLowerCase());
+    });
+    let count = 0;
+    // 사용자 설치 루트를 먼저 제거하면 공유 의존성 관계가 안전하게 정리된다.
+    const registry = await readRegistry(id);
+    const roots = registry.filter(x => x.folder === meta.folder && !x.autoDependency);
+    const originallyManagedFiles = new Set(registry.filter(x => x.folder === meta.folder).flatMap(x => [x.fileName, `${x.fileName}.disabled`]));
+    const directNames = names.filter(name => !originallyManagedFiles.has(name));
+    for (const rec of roots) {
+      const result = await uninstallManagedProject(id, rec.projectId);
+      if (result?.ok) count++;
+    }
+    for (const name of directNames) {
+      await fsp.rm(path.join(folder, path.basename(name)), { force: true });
+      count++;
+    }
+    // 부모가 모두 사라진 자동 의존성은 마지막으로 정리한다.
+    let cleaned = await cleanupOrphanDependencies(id, await readRegistry(id));
+    await writeRegistry(id, cleaned);
+    return { ok: true, count };
+  } catch (error) { return { ok: false, error: error.message }; }
 });
 async function openFolderReliable(folder) {
   const resolved = path.resolve(folder);
@@ -984,8 +1027,9 @@ ipcMain.handle('modrinth-update', async (_event, id, projectId) => {
     return { ok: true };
   } catch (error) { return { ok: false, error: error.message }; }
 });
-async function updateAllManagedContent(id, instance) {
-  const roots = (await readRegistry(id)).filter(x => !x.autoDependency).map(x => x.projectId);
+async function updateAllManagedContent(id, instance, type = null) {
+  const meta = type ? validateContentType(type) : null;
+  const roots = (await readRegistry(id)).filter(x => !x.autoDependency && (!meta || x.folder === meta.folder)).map(x => x.projectId);
   let count = 0;
   for (const projectId of roots) {
     const rec = (await readRegistry(id)).find(x => x.projectId === projectId);
@@ -995,10 +1039,27 @@ async function updateAllManagedContent(id, instance) {
   }
   return count;
 }
-ipcMain.handle('modrinth-update-all', async (_event, id) => {
+ipcMain.handle('modrinth-update-batch', async (_event, id, projectIds) => {
   try {
     const { instance } = await getInstance(id); if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
-    return { ok: true, count: await updateAllManagedContent(id, instance) };
+    const wanted = [...new Set((Array.isArray(projectIds) ? projectIds : []).map(String).filter(Boolean))];
+    let count = 0, checked = 0;
+    for (const projectId of wanted) {
+      const rec = (await readRegistry(id)).find(x => x.projectId === projectId && !x.autoDependency);
+      if (!rec) continue;
+      checked++;
+      const u = await getUpdateForRecord(instance, rec);
+      if (!u) continue;
+      await updateManagedRoot(id, instance, projectId);
+      count++;
+    }
+    return { ok: true, count, checked };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
+ipcMain.handle('modrinth-update-all', async (_event, id, type = null) => {
+  try {
+    const { instance } = await getInstance(id); if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
+    return { ok: true, count: await updateAllManagedContent(id, instance, type) };
   } catch (error) { return { ok: false, error: error.message }; }
 });
 
@@ -1315,7 +1376,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.7 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.8 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes };

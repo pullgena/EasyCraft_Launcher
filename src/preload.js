@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   listContent: (id, type) => ipcRenderer.invoke('list-content', id, type),
   toggleContent: (id, type, name) => ipcRenderer.invoke('toggle-content', id, type, name),
   deleteContent: (id, type, name) => ipcRenderer.invoke('delete-content', id, type, name),
+  deleteContentBatch: (id, type, names) => ipcRenderer.invoke('delete-content-batch', id, type, names),
+  deleteAllContent: (id, type) => ipcRenderer.invoke('delete-all-content', id, type),
   openContentFolder: (id, type) => ipcRenderer.invoke('open-content-folder', id, type),
   openInstanceFolder: id => ipcRenderer.invoke('open-instance-folder', id),
 
@@ -30,7 +32,8 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   modrinthUninstall: (id, projectId) => ipcRenderer.invoke('modrinth-uninstall', id, projectId),
   modrinthCheckUpdates: id => ipcRenderer.invoke('modrinth-check-updates', id),
   modrinthUpdate: (id, projectId) => ipcRenderer.invoke('modrinth-update', id, projectId),
-  modrinthUpdateAll: id => ipcRenderer.invoke('modrinth-update-all', id),
+  modrinthUpdateBatch: (id, projectIds) => ipcRenderer.invoke('modrinth-update-batch', id, projectIds),
+  modrinthUpdateAll: (id, type = null) => ipcRenderer.invoke('modrinth-update-all', id, type),
 
   launchGame: id => ipcRenderer.invoke('launch-game', id),
   stopGame: id => ipcRenderer.invoke('stop-game', id),

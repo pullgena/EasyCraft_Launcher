@@ -1,8 +1,8 @@
-# EasyCraft Launcher v0.4.7
+# EasyCraft Launcher v0.4.8
 
 Windows용 Minecraft Java 런처입니다. 인스턴스별 Minecraft 버전, 모드 로더와 로더 버전, RAM, Java, 콘텐츠를 따로 관리할 수 있습니다.
 
-## v0.4.7
+## v0.4.8
 
 ### 인스턴스 폴더 열기 수정
 인스턴스의 `폴더 열기` 버튼을 눌러도 Windows 탐색기가 열리지 않던 문제를 수정했습니다.
@@ -15,4 +15,4 @@ Windows용 Minecraft Java 런처입니다. 인스턴스별 Minecraft 버전, 모
 ## 빌드
 GitHub Actions의 `Build Windows EXE` 워크플로를 실행하거나 Windows에서 `BUILD_EXE.bat`을 사용할 수 있습니다.
 
-Release 태그는 `v0.4.7`으로 만들고, 자동 업데이트를 위해 Release의 `EasyCraft-Launcher-Setup-0.4.7.exe`, `latest.yml`, `.blockmap` 파일을 유지하세요.
+Release 태그는 `v0.4.8`으로 만들고, 자동 업데이트를 위해 Release의 `EasyCraft-Launcher-Setup-0.4.8.exe`, `latest.yml`, `.blockmap` 파일을 유지하세요.

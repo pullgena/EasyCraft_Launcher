@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.7",
-  "description": "EasyCraft Launcher 0.4.7 - fixed instance folder opening on Windows",
+  "version": "0.4.8",
+  "description": "EasyCraft Launcher 0.4.8 - improved Modrinth install controls and bulk content management",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
