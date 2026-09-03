@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   downloadLauncherUpdate: () => ipcRenderer.invoke('download-launcher-update'),
   installLauncherUpdate: () => ipcRenderer.invoke('install-launcher-update'),
   openLauncherReleaseNotes: version => ipcRenderer.invoke('open-launcher-release-notes', version),
+  uninstallEasyCraft: () => ipcRenderer.invoke('uninstall-easycraft'),
 
   getFilePath: file => webUtils.getPathForFile(file),
 

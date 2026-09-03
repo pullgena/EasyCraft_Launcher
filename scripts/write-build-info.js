@@ -5,13 +5,18 @@ const cp = require('child_process');
 function repositoryFromRemote() {
   try {
     const url = cp.execSync('git config --get remote.origin.url', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    const m = url.match(/github\.com[/:]([^/]+)\/([^/.]+)(?:\.git)?$/i);
+    const m = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?$/i);
     return m ? `${m[1]}/${m[2]}` : '';
   } catch { return ''; }
 }
 
-const repository = process.env.GITHUB_REPOSITORY || repositoryFromRemote();
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+function repositoryFromPackage() {
+  const url = String(pkg?.repository?.url || '');
+  const m = url.match(/github\.com[/:]([^/]+)\/(.+?)(?:\.git)?$/i);
+  return m ? `${m[1]}/${m[2]}` : '';
+}
+const repository = process.env.GITHUB_REPOSITORY || repositoryFromRemote() || repositoryFromPackage();
 const out = {
   repository,
   builtAt: new Date().toISOString(),

@@ -10,10 +10,13 @@ const AdmZip = require('adm-zip');
 let mainWindow;
 let currentAccount = null;
 let activeLauncher = null;
+let gameOverlayWindow = null;
+let gameOverlayTimer = null;
+let gameOverlayProbeBusy = false;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.9 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.10 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -179,6 +182,91 @@ async function loadSavedAccount() {
     return null;
   }
 }
+function gameOverlayHtmlPath() { return path.join(__dirname, 'game-overlay.html'); }
+async function ensureGameOverlayWindow() {
+  if (gameOverlayWindow && !gameOverlayWindow.isDestroyed()) return gameOverlayWindow;
+  gameOverlayWindow = new BrowserWindow({
+    width: 238, height: 38,
+    frame: false, transparent: true, resizable: false, movable: false,
+    focusable: false, show: false, skipTaskbar: true, hasShadow: false,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  gameOverlayWindow.setMenuBarVisibility(false);
+  gameOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
+  try { gameOverlayWindow.setAlwaysOnTop(true, 'screen-saver'); } catch {}
+  try { gameOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
+  await gameOverlayWindow.loadFile(gameOverlayHtmlPath());
+  gameOverlayWindow.on('closed', () => { gameOverlayWindow = null; });
+  return gameOverlayWindow;
+}
+function stopGameOverlay() {
+  if (gameOverlayTimer) clearInterval(gameOverlayTimer);
+  gameOverlayTimer = null;
+  gameOverlayProbeBusy = false;
+  if (gameOverlayWindow && !gameOverlayWindow.isDestroyed()) gameOverlayWindow.hide();
+}
+function findMinecraftWindowRect(workerPid) {
+  if (process.platform !== 'win32' || !workerPid) return Promise.resolve(null);
+  const script = String.raw`$ErrorActionPreference='SilentlyContinue'
+$ParentPid=${Number(workerPid)}
+$java = Get-CimInstance Win32_Process -Filter ("ParentProcessId = " + $ParentPid) | Where-Object { $_.Name -eq 'javaw.exe' -or $_.Name -eq 'java.exe' }
+if (-not $java) { exit 0 }
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class ECWin32 {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+}
+"@
+foreach ($row in $java) {
+  $p = Get-Process -Id $row.ProcessId -ErrorAction SilentlyContinue
+  if ($p -and $p.MainWindowHandle -ne 0 -and -not [ECWin32]::IsIconic($p.MainWindowHandle) -and [ECWin32]::GetForegroundWindow() -eq $p.MainWindowHandle) {
+    $r = New-Object ECWin32+RECT
+    if ([ECWin32]::GetWindowRect($p.MainWindowHandle, [ref]$r)) {
+      $w=$r.Right-$r.Left; $h=$r.Bottom-$r.Top
+      if ($w -gt 300 -and $h -gt 200) { Write-Output ($r.Left.ToString()+'|'+$r.Top.ToString()+'|'+$w.ToString()+'|'+$h.ToString()); exit 0 }
+    }
+  }
+}`;
+  return new Promise(resolve => {
+    execFile('powershell.exe', ['-NoProfile','-NonInteractive','-WindowStyle','Hidden','-Command',script], { windowsHide:true, timeout:3000 }, (error, stdout) => {
+      if (error || !stdout) return resolve(null);
+      const parts=String(stdout).trim().split('|').map(Number);
+      if (parts.length !== 4 || parts.some(v => !Number.isFinite(v))) return resolve(null);
+      resolve({ x:parts[0], y:parts[1], width:parts[2], height:parts[3] });
+    });
+  });
+}
+async function updateGameOverlayPosition(workerPid) {
+  if (gameOverlayProbeBusy) return;
+  gameOverlayProbeBusy = true;
+  try {
+    const rect = await findMinecraftWindowRect(workerPid);
+    if (!rect || rect.x < -10000 || rect.y < -10000) {
+      if (gameOverlayWindow && !gameOverlayWindow.isDestroyed()) gameOverlayWindow.hide();
+      return;
+    }
+    const overlay = await ensureGameOverlayWindow();
+    const [ow, oh] = overlay.getSize();
+    const x = Math.round(rect.x + 16);
+    const y = Math.round(rect.y + rect.height - oh - 18);
+    overlay.setPosition(x, y, false);
+    if (!overlay.isVisible()) overlay.showInactive();
+  } catch {} finally { gameOverlayProbeBusy = false; }
+}
+function startGameOverlay(workerPid) {
+  stopGameOverlay();
+  if (process.platform !== 'win32' || !workerPid) return;
+  updateGameOverlayPosition(workerPid);
+  gameOverlayTimer = setInterval(() => updateGameOverlayPosition(workerPid), 900);
+  gameOverlayTimer.unref?.();
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1040, minHeight: 680,
@@ -198,6 +286,7 @@ app.whenReady().then(async () => {
   loadSavedAccount().then(summary => send('account-changed', summary));
   initAutoUpdater();
 });
+app.on('before-quit', () => stopGameOverlay());
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
@@ -1305,6 +1394,7 @@ function startLaunchWatchdog(ref) {
 function finishLaunchRef(ref, { error = null, closed = false, code = null } = {}) {
   if (activeLauncher !== ref) return;
   clearLaunchWatchdog(ref);
+  stopGameOverlay();
   const id = ref.instanceId;
   const wasRunning = ref.state === 'running';
   activeLauncher = null;
@@ -1366,6 +1456,7 @@ function spawnMinecraftWorker(ref) {
       clearLaunchWatchdog(ref);
       emitLaunchState('running', ref.instanceId, { name: ref.instance.name });
       send('launch-progress', { percent: 100, text: 'Minecraft 실행 중' });
+      startGameOverlay(worker.pid);
       writeLaunchReadyMarker(ref.instanceId, ref.instance);
     } else if (message.type === 'error') {
       ref.workerTerminalMessage = true;
@@ -1401,6 +1492,7 @@ ipcMain.handle('stop-game', async (_event, id) => {
 
   // 준비 다운로드와 실행된 Java가 같은 worker 프로세스 트리에 있으므로 한 번에 즉시 종료한다.
   if (ref.worker) killWorkerTree(ref.worker);
+  stopGameOverlay();
   activeLauncher = null;
   send('launch-closed', { instanceId:id, cancelled:true });
   emitLaunchState('idle', id, { cancelled:true });
@@ -1761,3 +1853,66 @@ ipcMain.handle('open-launcher-release-notes', async (_event, version) => {
     return { ok: false, error: String(error?.message || error || 'GitHub Release 페이지를 열지 못했습니다.') };
   }
 });
+
+
+async function findInstalledUninstaller() {
+  if (!app.isPackaged || process.platform !== 'win32') return null;
+  const installDir = path.dirname(process.execPath);
+  try {
+    const entries = await fsp.readdir(installDir, { withFileTypes: true });
+    const hit = entries.find(entry => entry.isFile() && /^Uninstall.*\.exe$/i.test(entry.name));
+    return hit ? path.join(installDir, hit.name) : null;
+  } catch { return null; }
+}
+
+async function startSilentUninstall() {
+  if (process.platform !== 'win32') return { ok: false, error: '현재는 Windows 설치본에서만 프로그램 삭제를 지원합니다.' };
+  if (!app.isPackaged) return { ok: false, error: '개발 모드에서는 프로그램 삭제를 실행할 수 없습니다.' };
+  const uninstaller = await findInstalledUninstaller();
+  if (!uninstaller) return { ok: false, error: 'EasyCraft Launcher 삭제 프로그램을 찾지 못했습니다. Windows 설정에서 설치 상태를 확인해 주세요.' };
+  try {
+    const helperDir = path.join(app.getPath('temp'), 'EasyCraft-Uninstall');
+    await fsp.mkdir(helperDir, { recursive: true });
+    const helperPath = path.join(helperDir, 'easycraft-uninstall.ps1');
+    const appData = app.getPath('appData');
+    const userDataPaths = [...new Set([
+      app.getPath('userData'),
+      path.join(appData, 'EasyCraft Launcher'),
+      path.join(appData, 'easycraft-launcher'),
+      path.join(appData, 'EasyCraftLauncher')
+    ])];
+    const script = String.raw`param(
+  [Parameter(Mandatory=$true)][int]$ParentPid,
+  [Parameter(Mandatory=$true)][string]$Uninstaller,
+  [Parameter(Mandatory=$true)][string]$DataJson
+)
+$ErrorActionPreference = 'SilentlyContinue'
+$deadline = (Get-Date).AddMinutes(3)
+while ((Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
+  Start-Sleep -Milliseconds 200
+}
+Start-Process -FilePath $Uninstaller -ArgumentList '/S' -Wait -WindowStyle Hidden
+try { $targets = ConvertFrom-Json $DataJson } catch { $targets = @() }
+foreach ($target in $targets) {
+  if ($target -and (Test-Path -LiteralPath $target)) {
+    Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+`;
+    await fsp.writeFile(helperPath, script, 'utf8');
+    const child = spawn('powershell.exe', [
+      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+      '-File', helperPath,
+      '-ParentPid', String(process.pid),
+      '-Uninstaller', uninstaller,
+      '-DataJson', JSON.stringify(userDataPaths)
+    ], { detached: true, windowsHide: true, stdio: 'ignore' });
+    child.unref();
+    setTimeout(() => app.quit(), 200);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error || '삭제를 시작하지 못했습니다.') };
+  }
+}
+
+ipcMain.handle('uninstall-easycraft', async () => startSilentUninstall());

@@ -1,10 +1,6 @@
-; EasyCraft Launcher uninstall cleanup
-; IMPORTANT: do not delete user data during an automatic app update.
-; Only remove EasyCraft's own roaming folders during a real uninstall.
+; EasyCraft Launcher v0.4.10
+; User Minecraft data lives under AppData and MUST survive app updates.
+; Data cleanup is performed only by the in-app confirmed uninstall flow.
+; Keeping NSIS cleanup empty prevents updater/uninstaller ambiguity from deleting worlds during an update.
 !macro customUnInstall
-  ${ifNot} ${isUpdated}
-    RMDir /r "$APPDATA\EasyCraft Launcher"
-    RMDir /r "$APPDATA\easycraft-launcher"
-    RMDir /r "$APPDATA\EasyCraftLauncher"
-  ${endIf}
 !macroend

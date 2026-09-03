@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.9',
+  appVersion: '0.4.10',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -17,7 +17,9 @@ const state = {
   searchResults: [],
   installedItems: [],
   selectedContent: new Set(),
-  detailItem: null
+  detailItem: null,
+  contentUpdateProjects: new Set(),
+  contentUpdateCheckSeq: 0
 };
 
 function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -73,15 +75,6 @@ function renderHero() {
   $('#settingsInstanceBtn').disabled = !inst;
   $('#settingsOpenFolderBtn').disabled = !inst;
   renderPlayButton();
-  renderHomeLaunchState();
-}
-function renderHomeLaunchState(){
-  const el=$('#heroLaunchState'), text=$('#heroLaunchStateText');
-  if(!el||!text)return;
-  if(state.launchState==='running'){el.classList.remove('hidden');el.dataset.state='running';text.textContent='EasyCraft Launcher로 실행됨';}
-  else if(state.launchState==='preparing'){el.classList.remove('hidden');el.dataset.state='preparing';text.textContent='EasyCraft Launcher에서 Minecraft 준비 중';}
-  else if(state.launchState==='stopping'){el.classList.remove('hidden');el.dataset.state='stopping';text.textContent='Minecraft 종료 중';}
-  else{el.classList.add('hidden');delete el.dataset.state;}
 }
 function renderPlayButton() {
   const btn = $('#playBtn');
@@ -202,14 +195,14 @@ async function launchOrStop() {
 function showLaunchPop(title,text,percent=null,showStop=true){ const el=$('#launchPop'); el.classList.remove('hidden'); $('#launchPopTitle').textContent=title; $('#launchPopText').textContent=text||''; if(percent!==null) $('#launchProgress').style.width=`${Math.max(0,Math.min(100,percent))}%`; $('#launchPopStopBtn').classList.toggle('hidden',!showStop); }
 function hideLaunchPop(){ $('#launchPop').classList.add('hidden'); $('#launchProgress').style.width='0%'; }
 function applyLaunchState(v={}) {
-  state.launchState=v.state||'idle'; state.activeInstanceId=v.instanceId||state.activeInstanceId; renderPlayButton(); renderHomeLaunchState();
+  state.launchState=v.state||'idle'; state.activeInstanceId=v.instanceId||state.activeInstanceId; renderPlayButton();
   if(state.launchState==='preparing') showLaunchPop('Minecraft 준비 중',v.name?`${v.name}을(를) 준비하고 있습니다.`:'필요한 파일을 확인하고 있습니다.',2,true);
   else if(state.launchState==='stopping'){showLaunchPop('Minecraft 중지 중','종료 요청을 보냈습니다.',null,false);clearTimeout(applyLaunchState._stopT);applyLaunchState._stopT=setTimeout(hideLaunchPop,350);}
   else if(state.launchState==='running'){ showLaunchPop('Minecraft 실행됨',v.name?`${v.name}이(가) 실행 중입니다.`:'게임이 실행 중입니다.',100,false); clearTimeout(applyLaunchState._t); applyLaunchState._t=setTimeout(hideLaunchPop,1800); }
   else { hideLaunchPop(); state.activeInstanceId=null; }
 }
 
-async function renderContent() {
+async function renderContent(checkUpdates=true) {
   const inst=currentInstance();
   $('#contentContext').textContent=inst?`${inst.name} · Minecraft ${inst.version} · ${loaderLabel(inst.loader)}`:'먼저 홈에서 인스턴스를 선택해 주세요.';
   $('#searchInput').placeholder=`${contentTypeLabel()} 이름을 입력하면 자동으로 검색됩니다`;
@@ -244,19 +237,23 @@ async function renderContent() {
       : '<span class="dependency-lock" title="다른 모드가 필요로 하는 필수 의존성">필수</span>';
     const typeIcon=state.contentType==='mods'?'M':state.contentType==='resourcepacks'?'R':state.contentType==='shaderpacks'?'S':'P';
     const toggleButton=state.contentType==='modpacks'?'':`<button class="btn subtle small toggle">${item.enabled?'끄기':'켜기'}</button>`;
-    row.innerHTML=`${selector}${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:`<div class="result-placeholder">${typeIcon}</div>`}<div class="item-copy"><button class="content-name installed-name" type="button">${esc(item.title||item.displayName)}</button><span>${item.managed?`Modrinth${item.versionNumber?` · ${esc(item.versionNumber)}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'}${state.contentType==='modpacks'?' · 적용됨':` · ${item.enabled?'사용 중':'꺼짐'}`}</span></div><div class="item-actions">${toggleButton}${item.managed&&!item.autoDependency?'<button class="btn subtle small update">업데이트</button>':''}<button class="btn danger small remove" ${item.autoDependency?'disabled title="필요한 모드를 먼저 삭제해 주세요."':''}>삭제</button></div>`;
+    row.innerHTML=`${selector}${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:`<div class="result-placeholder">${typeIcon}</div>`}<div class="item-copy"><button class="content-name installed-name" type="button">${esc(item.title||item.displayName)}</button><span>${item.managed?`Modrinth${item.versionNumber?` · ${esc(item.versionNumber)}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'}${state.contentType==='modpacks'?' · 적용됨':` · ${item.enabled?'사용 중':'꺼짐'}`}</span></div><div class="item-actions">${toggleButton}${item.managed&&!item.autoDependency&&state.contentUpdateProjects.has(item.projectId)?'<button class="btn subtle small update">업데이트</button>':''}<button class="btn danger small remove" ${item.autoDependency?'disabled title="필요한 모드를 먼저 삭제해 주세요."':''}>삭제</button></div>`;
     row.querySelector('.installed-name')?.addEventListener('click',()=>openContentDetail(item));
     row.querySelector('.select-installed')?.addEventListener('change',e=>{
       if(e.currentTarget.checked) state.selectedContent.add(key); else state.selectedContent.delete(key);
       row.classList.toggle('selected',e.currentTarget.checked); syncBulkControls();
     });
     row.querySelector('.toggle')?.addEventListener('click',async()=>{const r=await api.toggleContent(inst.id,state.contentType,item.name);if(!r.ok)toast(r.error||'변경 실패',true);await refreshCapabilities();await renderContent();});
-    row.querySelector('.update')?.addEventListener('click',async e=>{e.target.disabled=true;e.target.textContent='확인 중…';const r=await api.modrinthUpdate(inst.id,item.projectId);if(!r.ok)toast(r.error||'업데이트 실패',true);else{if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');}await refreshCapabilities();await renderContent();});
+    row.querySelector('.update')?.addEventListener('click',async e=>{e.target.disabled=true;e.target.textContent='확인 중…';const r=await api.modrinthUpdate(inst.id,item.projectId);if(!r.ok)toast(r.error||'업데이트 실패',true);else{if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');state.contentUpdateProjects.delete(item.projectId);}await refreshCapabilities();await renderContent();});
     row.querySelector('.remove')?.addEventListener('click',async()=>{if(item.autoDependency)return;const yes=await askConfirm(`${item.title||item.displayName}을(를) 삭제할까요?`,'콘텐츠 삭제');if(!yes)return;const r=await api.deleteContent(inst.id,state.contentType,item.name);if(!r.ok)return toast(r.error||'삭제 실패',true);state.selectedContent.delete(key);await refreshCapabilities();await renderContent();toast(r.retainedAsDependency?'다른 모드에서 필요해 파일은 의존성으로 유지했습니다.':'삭제했습니다.');});
     list.appendChild(row);
   }
   syncSearchInstalledFlags();
   syncBulkControls();
+  if(checkUpdates){
+    const hasManagedRoot=state.installedItems.some(i=>i.managed&&!i.autoDependency&&i.projectId);
+    if(hasManagedRoot) refreshContentUpdateAvailability(inst.id); else { state.contentUpdateProjects=new Set(); $('#contentUpdateStrip').classList.add('hidden'); syncBulkControls(); }
+  }
 }
 function contentSelectionKey(item){return item.projectId?`project:${item.projectId}`:`file:${item.name}`;}
 function selectedInstalledItems(){const keys=state.selectedContent;return state.installedItems.filter(i=>keys.has(contentSelectionKey(i))&&!i.autoDependency);}
@@ -272,12 +269,30 @@ function syncBulkControls(){
   selectAll.disabled=!selectable.length;
   selectAll.checked=!!selectable.length && selected.length===selectable.length;
   selectAll.indeterminate=selected.length>0 && selected.length<selectable.length;
-  const updatable=selected.filter(i=>i.managed&&i.projectId);
-  $('#updateSelectedContentBtn').disabled=!updatable.length;
+  const updatable=selected.filter(i=>i.managed&&i.projectId&&state.contentUpdateProjects.has(i.projectId));
+  const selectedUpdateBtn=$('#updateSelectedContentBtn');
+  selectedUpdateBtn.disabled=!updatable.length;
+  selectedUpdateBtn.classList.toggle('hidden',!updatable.length);
   $('#deleteSelectedContentBtn').disabled=!selected.length;
-  $('#updateAllContentBtn').disabled=!state.installedItems.some(i=>i.managed&&!i.autoDependency&&i.projectId);
+  const hasAnyUpdate=state.installedItems.some(i=>i.managed&&!i.autoDependency&&i.projectId&&state.contentUpdateProjects.has(i.projectId));
+  const allUpdateBtn=$('#updateAllContentBtn');
+  allUpdateBtn.disabled=!hasAnyUpdate;
+  allUpdateBtn.classList.toggle('hidden',!hasAnyUpdate);
   $('#deleteAllContentBtn').disabled=!state.installedItems.length;
 }
+async function refreshContentUpdateAvailability(instanceId){
+  const seq=++state.contentUpdateCheckSeq;
+  const r=await api.modrinthCheckUpdates(instanceId);
+  if(seq!==state.contentUpdateCheckSeq || currentInstance()?.id!==instanceId)return;
+  if(!r?.ok){state.contentUpdateProjects=new Set();syncBulkControls();return;}
+  state.contentUpdateProjects=new Set((r.updates||[]).map(u=>u.projectId));
+  const currentUpdates=state.installedItems.filter(i=>i.projectId&&state.contentUpdateProjects.has(i.projectId));
+  const strip=$('#contentUpdateStrip');
+  if(currentUpdates.length){strip.classList.remove('hidden');$('#contentUpdateText').textContent=`${currentUpdates.length}개 콘텐츠를 업데이트할 수 있습니다.`;}
+  else strip.classList.add('hidden');
+  await renderContent(false);
+}
+
 let searchSequence=0;
 let searchTimer=null;
 async function searchContent() {
@@ -376,7 +391,7 @@ async function installProject(projectId,title,button=null){
   toast(`${r.title||title} 설치 완료`);state.selectedContent.clear();await refreshCapabilities();await renderContent();await searchContent();return true;
 }
 async function installFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;if(await installProject(d.projectId,d.title,button))await openContentDetail({...d,installed:true});}
-async function updateFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;button.disabled=true;button.textContent='업데이트 중…';const r=await api.modrinthUpdate(currentInstance().id,d.projectId);if(!r.ok){toast(r.error||'업데이트 실패',true);button.disabled=false;button.textContent='업데이트';return;}if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');await refreshCapabilities();await renderContent();await openContentDetail(d);}
+async function updateFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;button.disabled=true;button.textContent='업데이트 중…';const r=await api.modrinthUpdate(currentInstance().id,d.projectId);if(!r.ok){toast(r.error||'업데이트 실패',true);button.disabled=false;button.textContent='업데이트';return;}if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');state.contentUpdateProjects.delete(d.projectId);await refreshCapabilities();await renderContent();await openContentDetail(d);}
 async function deleteFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;const yes=await askConfirm(`${d.title}을(를) 삭제할까요?`,'콘텐츠 삭제');if(!yes)return;button.disabled=true;const r=await api.modrinthUninstall(currentInstance().id,d.projectId);if(!r.ok){toast(r.error||'삭제 실패',true);button.disabled=false;return;}closeModal('contentDetailModal');await refreshCapabilities();await renderContent();await searchContent();toast('삭제했습니다.');}
 
 function renderSearchResults(){
@@ -390,9 +405,9 @@ function renderSearchResults(){
     area.appendChild(row);
   }
 }
-async function checkContentUpdates(showLatest=true){const inst=currentInstance();if(!inst)return;const r=await api.modrinthCheckUpdates(inst.id);if(!r.ok)return toast(r.error||'업데이트 확인 실패',true);const strip=$('#contentUpdateStrip');if(!r.updates?.length){strip.classList.add('hidden');if(showLatest)toast('설치된 콘텐츠가 최신 상태입니다.');return;}strip.classList.remove('hidden');$('#contentUpdateText').textContent=`${r.updates.length}개 콘텐츠를 업데이트할 수 있습니다.`;}
+async function checkContentUpdates(showLatest=true){const inst=currentInstance();if(!inst)return;const r=await api.modrinthCheckUpdates(inst.id);if(!r.ok)return toast(r.error||'업데이트 확인 실패',true);state.contentUpdateProjects=new Set((r.updates||[]).map(u=>u.projectId));const strip=$('#contentUpdateStrip');const currentUpdates=state.installedItems.filter(i=>i.projectId&&state.contentUpdateProjects.has(i.projectId));if(!currentUpdates.length){strip.classList.add('hidden');syncBulkControls();if(showLatest)toast('설치된 콘텐츠가 최신 상태입니다.');return;}strip.classList.remove('hidden');$('#contentUpdateText').textContent=`${currentUpdates.length}개 콘텐츠를 업데이트할 수 있습니다.`;await renderContent(false);}
 
-function updateSettingsText(u=state.update){ const version=state.appVersion; const title=$('#updateStatusTitle'), text=$('#updateStatusText'), action=$('#settingsUpdateActionBtn'), notes=$('#settingsReleaseNotesBtn'), progress=$('#updateProgress'); progress.style.width=`${u.percent||0}%`; action.classList.add('hidden'); action.dataset.action=''; notes.classList.toggle('hidden', !['available','downloading','downloaded'].includes(u.state)); if(u.state==='latest'){title.textContent='최신 버전입니다';text.textContent=`EasyCraft v${version}을 사용하고 있습니다.`;}else if(u.state==='available'){title.textContent=`v${u.availableVersion} 업데이트 가능`;text.textContent='새 버전을 다운로드하기 전에 GitHub에서 업데이트 내역을 확인할 수 있습니다.';action.textContent='업데이트';action.dataset.action='download';action.classList.remove('hidden');}else if(u.state==='downloading'){title.textContent=`업데이트 다운로드 중 · ${u.percent||0}%`;text.textContent='GitHub Release에서 이번 업데이트의 변경사항을 확인할 수 있습니다.';}else if(u.state==='downloaded'){title.textContent=`v${u.availableVersion} 준비 완료`;text.textContent='업데이트 내역을 확인하거나 재시작해서 새 버전을 적용하세요.';action.textContent='재시작하여 업데이트';action.dataset.action='install';action.classList.remove('hidden');}else if(u.state==='installing'){title.textContent=`v${u.availableVersion||''} 업데이트 적용 중`;text.textContent='작은 업데이트 창에서 설치 진행 상태를 확인할 수 있습니다.';}else if(u.state==='checking'||u.state==='idle'){title.textContent='업데이트 확인 중';text.textContent='최신 버전을 확인하고 있습니다.';}else if(u.state==='dev'){title.textContent='개발 모드';text.textContent='설치된 EXE에서 업데이트를 확인할 수 있습니다.';}else if(u.state==='error'){title.textContent='업데이트 확인 오류';text.textContent=u.error||'업데이트 서버에 연결하지 못했습니다.';}else{title.textContent='업데이트 상태';text.textContent='업데이트 확인 버튼을 눌러 확인할 수 있습니다.';} }
+function updateSettingsText(u=state.update){ const version=state.appVersion; const title=$('#updateStatusTitle'), text=$('#updateStatusText'), action=$('#settingsUpdateActionBtn'), notes=$('#settingsReleaseNotesBtn'), progress=$('#updateProgress'), check=$('#manualUpdateCheckBtn'); progress.style.width=`${u.percent||0}%`; action.classList.add('hidden'); action.dataset.action=''; action.disabled=false; check.textContent='업데이트 확인'; notes.classList.toggle('hidden', !['available','downloading','downloaded'].includes(u.state)); if(u.state==='latest'){title.textContent='최신 버전입니다';text.textContent=`EasyCraft v${version}을 사용하고 있습니다.`;}else if(u.state==='available'){title.textContent=`v${u.availableVersion} 업데이트 가능`;text.textContent='새 버전을 다운로드하기 전에 GitHub에서 업데이트 내역을 확인할 수 있습니다.';action.textContent='업데이트';action.dataset.action='download';action.classList.remove('hidden');}else if(u.state==='downloading'){title.textContent=`업데이트 다운로드 중 · ${u.percent||0}%`;text.textContent='GitHub Release에서 이번 업데이트의 변경사항을 확인할 수 있습니다.';}else if(u.state==='downloaded'){title.textContent=`v${u.availableVersion} 준비 완료`;text.textContent='업데이트 내역을 확인하거나 재시작해서 새 버전을 적용하세요.';action.textContent='재시작하여 업데이트';action.dataset.action='install';action.classList.remove('hidden');}else if(u.state==='installing'){title.textContent=`v${u.availableVersion||''} 업데이트 적용 중`;text.textContent='작은 업데이트 창에서 설치 진행 상태를 확인할 수 있습니다.';}else if(u.state==='checking'||u.state==='idle'){title.textContent='업데이트 확인 중';text.textContent='최신 버전을 확인하고 있습니다.';}else if(u.state==='dev'){title.textContent='개발 모드';text.textContent='설치된 EXE에서 업데이트를 확인할 수 있습니다.';}else if(u.state==='error'){title.textContent='업데이트 확인 오류';text.textContent=u.error||'업데이트 서버에 연결하지 못했습니다.';}else{title.textContent='업데이트 상태';text.textContent='업데이트 확인 버튼을 눌러 확인할 수 있습니다.';} }
 function renderStartupUpdate(u=state.update){ const gate=$('#startupGate'), checking=$('#gateChecking'), avail=$('#gateAvailable'); if(state.updatePromptDismissed){gate.classList.add('hidden');return;} if(u.state==='checking'||u.state==='idle'){gate.classList.remove('hidden');checking.classList.remove('hidden');avail.classList.add('hidden');return;} if(u.state==='available'||u.state==='downloading'||u.state==='downloaded'){gate.classList.remove('hidden');checking.classList.add('hidden');avail.classList.remove('hidden');$('#gateUpdateTitle').textContent=u.state==='downloaded'?`EasyCraft v${u.availableVersion} 준비 완료`:`EasyCraft v${u.availableVersion} 업데이트`;$('#gateUpdateDescription').textContent=u.state==='downloaded'?'재시작하면 새 버전을 바로 사용할 수 있습니다.':u.state==='downloading'?`업데이트를 다운로드하고 있습니다. ${u.percent||0}%`:`현재 v${state.appVersion} → 새 버전 v${u.availableVersion}. 지금 업데이트하시겠어요?`;$('#gateProgressWrap').classList.toggle('hidden',u.state==='available');$('#gateProgress').style.width=`${u.percent||0}%`;$('#gateReleaseNotesBtn').classList.toggle('hidden', !u.availableVersion);$('#updateLaterBtn').disabled=u.state==='downloading';$('#updateNowBtn').disabled=u.state==='downloading';$('#updateNowBtn').textContent=u.state==='downloaded'?'재시작하여 업데이트':u.state==='downloading'?'다운로드 중…':'업데이트';return;} gate.classList.add('hidden');}
 function applyUpdateState(u={}){state.update={...state.update,...u};updateSettingsText(state.update);renderStartupUpdate(state.update);}
 function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);}
@@ -439,7 +454,7 @@ $('#settingsOpenFolderBtn').addEventListener('click',openSelectedInstanceFolder)
 $$('.content-tab').forEach(b=>b.addEventListener('click',async()=>{state.contentType=b.dataset.type;state.selectedContent.clear();$$('.content-tab').forEach(x=>x.classList.toggle('active',x===b));state.searchResults=[];$('#searchInput').value='';await renderContent();await searchContent();}));
 $('#searchInput').addEventListener('input',scheduleContentSearch);$('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(searchTimer);searchContent();}});$('#contentFolderBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return toast('인스턴스를 먼저 선택해 주세요.',true);const r=await api.openContentFolder(i.id,state.contentType);if(!r?.ok)toast(r?.error||'콘텐츠 폴더를 열지 못했습니다.',true);});$('#pickLocalContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const r=await api.pickContent(i.id,state.contentType);if(r.added?.length)toast(`${r.added.length}개 파일을 추가했습니다.`);state.selectedContent.clear();await refreshCapabilities();await renderContent();});$('#contentUpdatesBtn').addEventListener('click',()=>checkContentUpdates(true));
 $('#selectAllInstalled').addEventListener('change',e=>{const selectable=state.installedItems.filter(i=>!i.autoDependency);state.selectedContent.clear();if(e.currentTarget.checked)for(const item of selectable)state.selectedContent.add(contentSelectionKey(item));renderContent();});
-$('#updateSelectedContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const selected=selectedInstalledItems().filter(x=>x.managed&&x.projectId);if(!selected.length)return;const btn=$('#updateSelectedContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateBatch(i.id,selected.map(x=>x.projectId));btn.textContent='선택 업데이트';if(!r.ok){syncBulkControls();return toast(r.error||'업데이트 실패',true);}if(r.config){state.config=r.config;renderAll();}toast(r.count?`${r.count}개 콘텐츠를 업데이트했습니다.`:'선택한 콘텐츠가 모두 최신입니다.');await refreshCapabilities();await renderContent();});
+$('#updateSelectedContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const selected=selectedInstalledItems().filter(x=>x.managed&&x.projectId&&state.contentUpdateProjects.has(x.projectId));if(!selected.length)return;const btn=$('#updateSelectedContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateBatch(i.id,selected.map(x=>x.projectId));btn.textContent='선택 업데이트';if(!r.ok){syncBulkControls();return toast(r.error||'업데이트 실패',true);}if(r.config){state.config=r.config;renderAll();}toast(r.count?`${r.count}개 콘텐츠를 업데이트했습니다.`:'선택한 콘텐츠가 모두 최신입니다.');await refreshCapabilities();await renderContent();});
 $('#deleteSelectedContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const selected=selectedInstalledItems();if(!selected.length)return;if(!(await askConfirm(`선택한 ${selected.length}개 콘텐츠를 삭제할까요?`,'선택한 콘텐츠 삭제')))return;const btn=$('#deleteSelectedContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteContentBatch(i.id,state.contentType,selected.map(x=>x.name));btn.textContent='선택 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast(`${r.count||selected.length}개 콘텐츠를 삭제했습니다.`);});
 $('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i)return;const btn=$('#updateAllContentBtn');btn.disabled=true;btn.textContent='업데이트 중…';const r=await api.modrinthUpdateAll(i.id,state.contentType);btn.textContent='전체 업데이트';if(!r.ok){syncBulkControls();return toast(r.error||'업데이트 실패',true);}if(r.config){state.config=r.config;renderAll();}toast(r.count?`${r.count}개 콘텐츠를 업데이트했습니다.`:'설치된 콘텐츠가 모두 최신입니다.');$('#contentUpdateStrip').classList.add('hidden');await refreshCapabilities();await renderContent();});
 $('#deleteAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i||!state.installedItems.length)return;if(!(await askConfirm(`현재 ${contentTypeLabel()}를 모두 삭제할까요?`,'전체 삭제')))return;const btn=$('#deleteAllContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteAllContent(i.id,state.contentType);btn.textContent='전체 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'전체 삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast('전체 삭제가 완료되었습니다.');});
@@ -452,6 +467,16 @@ $('#settingsUpdateActionBtn').addEventListener('click',async()=>{const action=$(
 $('#updateLaterBtn').addEventListener('click',()=>{state.updatePromptDismissed=true;$('#startupGate').classList.add('hidden');});
 $('#updateNowBtn').addEventListener('click',async()=>{if(state.update.state==='downloaded'){const r=await api.installLauncherUpdate();if(!r.ok)toast(r.error||'업데이트 적용 실패',true);}else{const r=await api.downloadLauncherUpdate();if(!r.ok)toast(r.error||'업데이트 다운로드 실패',true);}});
 
+$('#uninstallEasyCraftBtn').addEventListener('click',()=>openModal('uninstallModal'));
+$('#uninstallNoBtn').addEventListener('click',()=>closeModal('uninstallModal'));
+$('#uninstallYesBtn').addEventListener('click',async()=>{
+  const btn=$('#uninstallYesBtn');btn.disabled=true;btn.textContent='삭제 준비 중…';
+  const r=await api.uninstallEasyCraft();
+  if(!r?.ok){btn.disabled=false;btn.textContent='예';toast(r?.error||'EasyCraft Launcher를 삭제하지 못했습니다.',true);return;}
+  $('#uninstallNoBtn').disabled=true;
+  $('.uninstall-warning').textContent='EasyCraft Launcher를 종료하고 삭제하고 있습니다…';
+});
+
 api.onAccountChanged(a=>{state.account=a;renderAccount();});
 api.onStatus(s=>{if(s?.kind==='error'&&s.text)toast(s.text,true);});
 api.onLaunchProgress(p=>{if(state.launchState!=='stopping')showLaunchPop('Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
@@ -462,7 +487,7 @@ api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.9';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.10';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
   $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
   renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
   const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';

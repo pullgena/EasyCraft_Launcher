@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.9",
-  "description": "EasyCraft Launcher 0.4.9 - automatic Modrinth search, in-app content details and confirmations, modpack support",
+  "version": "0.4.10",
+  "description": "EasyCraft Launcher 0.4.10 - safe data-preserving updates, in-game launch badge, and conditional mod update actions",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",

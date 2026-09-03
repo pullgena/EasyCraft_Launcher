@@ -45,7 +45,6 @@
             <div class="instance-label" id="heroBadge">새 인스턴스를 만들어 시작하세요</div>
             <h2 class="hero-title" id="heroName">Minecraft를 준비해 볼까요?</h2>
             <p class="hero-meta" id="heroMeta">버전과 로더를 고르고, 원하는 모드를 바로 설치해 플레이할 수 있습니다.</p>
-            <div class="hero-launch-state hidden" id="heroLaunchState"><span class="hero-launch-dot"></span><strong id="heroLaunchStateText">EasyCraft Launcher로 실행됨</strong></div>
             <button class="play-main" id="playBtn"><span class="play-symbol">▶</span><span>게임 실행</span></button>
             <div class="hero-links">
               <button id="heroSettingsBtn">인스턴스 설정</button>
@@ -96,11 +95,11 @@
               <div class="installed-tools" id="installedTools">
                 <label class="bulk-check"><input type="checkbox" id="selectAllInstalled" /><span>전체 선택</span></label>
                 <div class="bulk-buttons">
-                  <button id="updateSelectedContentBtn" disabled>선택 업데이트</button>
+                  <button id="updateSelectedContentBtn" class="hidden" disabled>선택 업데이트</button>
                   <button id="deleteSelectedContentBtn" class="danger" disabled>선택 삭제</button>
                 </div>
                 <div class="all-buttons">
-                  <button id="updateAllContentBtn">전체 업데이트</button>
+                  <button id="updateAllContentBtn" class="hidden">전체 업데이트</button>
                   <button id="deleteAllContentBtn" class="danger">전체 삭제</button>
                 </div>
               </div>
@@ -131,6 +130,11 @@
               <div class="setting-index">04</div>
               <div class="setting-copy"><span>FILES</span><h3>인스턴스 파일</h3><p>현재 인스턴스의 Minecraft 폴더를 엽니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsOpenFolderBtn">폴더 열기</button></div>
+            </section>
+            <section class="setting-row uninstall-row">
+              <div class="setting-index">05</div>
+              <div class="setting-copy"><span>UNINSTALL</span><h3>EasyCraft Launcher 삭제</h3><p>런처와 EasyCraft가 관리하는 Minecraft 데이터를 이 PC에서 제거합니다.</p></div>
+              <div class="setting-actions"><button class="setting-button danger" id="uninstallEasyCraftBtn">EasyCraft 삭제</button></div>
             </section>
           </div>
         </section>
@@ -204,6 +208,14 @@
       <div class="modal-head"><div><span class="setting-label">EASYCRAFT</span><h2 id="confirmTitle">확인</h2></div></div>
       <p class="confirm-message" id="confirmMessage"></p>
       <div class="modal-actions"><button class="btn subtle" id="confirmNoBtn">아니요</button><button class="btn primary" id="confirmYesBtn">예</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="uninstallModal">
+    <div class="modal-card confirm-card uninstall-confirm-card">
+      <div class="modal-head"><div><span class="setting-label">GOODBYE</span><h2>EasyCraft Launcher를 떠나시나요..?</h2></div></div>
+      <p class="confirm-message uninstall-warning">EasyCraft Launcher를 삭제하면 마인크래프트의 월드, 모드등은 전부 삭제 됩니다!</p>
+      <div class="modal-actions"><button class="btn danger" id="uninstallYesBtn">예</button><button class="btn subtle" id="uninstallNoBtn">아니요</button></div>
     </div>
   </div>
 
