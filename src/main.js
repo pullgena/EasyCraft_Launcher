@@ -10,13 +10,10 @@ const AdmZip = require('adm-zip');
 let mainWindow;
 let currentAccount = null;
 let activeLauncher = null;
-let gameOverlayWindow = null;
-let gameOverlayTimer = null;
-let gameOverlayProbeBusy = false;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.10 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.11 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -182,91 +179,6 @@ async function loadSavedAccount() {
     return null;
   }
 }
-function gameOverlayHtmlPath() { return path.join(__dirname, 'game-overlay.html'); }
-async function ensureGameOverlayWindow() {
-  if (gameOverlayWindow && !gameOverlayWindow.isDestroyed()) return gameOverlayWindow;
-  gameOverlayWindow = new BrowserWindow({
-    width: 238, height: 38,
-    frame: false, transparent: true, resizable: false, movable: false,
-    focusable: false, show: false, skipTaskbar: true, hasShadow: false,
-    alwaysOnTop: true,
-    backgroundColor: '#00000000',
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
-  });
-  gameOverlayWindow.setMenuBarVisibility(false);
-  gameOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
-  try { gameOverlayWindow.setAlwaysOnTop(true, 'screen-saver'); } catch {}
-  try { gameOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch {}
-  await gameOverlayWindow.loadFile(gameOverlayHtmlPath());
-  gameOverlayWindow.on('closed', () => { gameOverlayWindow = null; });
-  return gameOverlayWindow;
-}
-function stopGameOverlay() {
-  if (gameOverlayTimer) clearInterval(gameOverlayTimer);
-  gameOverlayTimer = null;
-  gameOverlayProbeBusy = false;
-  if (gameOverlayWindow && !gameOverlayWindow.isDestroyed()) gameOverlayWindow.hide();
-}
-function findMinecraftWindowRect(workerPid) {
-  if (process.platform !== 'win32' || !workerPid) return Promise.resolve(null);
-  const script = String.raw`$ErrorActionPreference='SilentlyContinue'
-$ParentPid=${Number(workerPid)}
-$java = Get-CimInstance Win32_Process -Filter ("ParentProcessId = " + $ParentPid) | Where-Object { $_.Name -eq 'javaw.exe' -or $_.Name -eq 'java.exe' }
-if (-not $java) { exit 0 }
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class ECWin32 {
-  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-}
-"@
-foreach ($row in $java) {
-  $p = Get-Process -Id $row.ProcessId -ErrorAction SilentlyContinue
-  if ($p -and $p.MainWindowHandle -ne 0 -and -not [ECWin32]::IsIconic($p.MainWindowHandle) -and [ECWin32]::GetForegroundWindow() -eq $p.MainWindowHandle) {
-    $r = New-Object ECWin32+RECT
-    if ([ECWin32]::GetWindowRect($p.MainWindowHandle, [ref]$r)) {
-      $w=$r.Right-$r.Left; $h=$r.Bottom-$r.Top
-      if ($w -gt 300 -and $h -gt 200) { Write-Output ($r.Left.ToString()+'|'+$r.Top.ToString()+'|'+$w.ToString()+'|'+$h.ToString()); exit 0 }
-    }
-  }
-}`;
-  return new Promise(resolve => {
-    execFile('powershell.exe', ['-NoProfile','-NonInteractive','-WindowStyle','Hidden','-Command',script], { windowsHide:true, timeout:3000 }, (error, stdout) => {
-      if (error || !stdout) return resolve(null);
-      const parts=String(stdout).trim().split('|').map(Number);
-      if (parts.length !== 4 || parts.some(v => !Number.isFinite(v))) return resolve(null);
-      resolve({ x:parts[0], y:parts[1], width:parts[2], height:parts[3] });
-    });
-  });
-}
-async function updateGameOverlayPosition(workerPid) {
-  if (gameOverlayProbeBusy) return;
-  gameOverlayProbeBusy = true;
-  try {
-    const rect = await findMinecraftWindowRect(workerPid);
-    if (!rect || rect.x < -10000 || rect.y < -10000) {
-      if (gameOverlayWindow && !gameOverlayWindow.isDestroyed()) gameOverlayWindow.hide();
-      return;
-    }
-    const overlay = await ensureGameOverlayWindow();
-    const [ow, oh] = overlay.getSize();
-    const x = Math.round(rect.x + 16);
-    const y = Math.round(rect.y + rect.height - oh - 18);
-    overlay.setPosition(x, y, false);
-    if (!overlay.isVisible()) overlay.showInactive();
-  } catch {} finally { gameOverlayProbeBusy = false; }
-}
-function startGameOverlay(workerPid) {
-  stopGameOverlay();
-  if (process.platform !== 'win32' || !workerPid) return;
-  updateGameOverlayPosition(workerPid);
-  gameOverlayTimer = setInterval(() => updateGameOverlayPosition(workerPid), 900);
-  gameOverlayTimer.unref?.();
-}
-
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360, height: 860, minWidth: 1040, minHeight: 680,
@@ -286,7 +198,6 @@ app.whenReady().then(async () => {
   loadSavedAccount().then(summary => send('account-changed', summary));
   initAutoUpdater();
 });
-app.on('before-quit', () => stopGameOverlay());
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
@@ -384,6 +295,172 @@ async function ensureInstanceFolders(id) {
     fsp.mkdir(path.join(root, 'saves'), { recursive: true }),
     fsp.mkdir(logsDir(id), { recursive: true })
   ]);
+}
+
+// ---------- 실제 Minecraft 인게임 HUD ----------
+// Electron 투명창을 Minecraft 위에 얹는 방식은 사용하지 않는다.
+// Fabric 인스턴스에서는 client-side CustomHud를 EasyCraft 런타임 구성요소로 준비하고,
+// CustomHud의 BottomLeft 섹션에 EasyCraft 실행 표시를 추가한다.
+function hudRuntimeManifestPath(id) { return path.join(instanceDir(id), 'easycraft-hud-runtime.json'); }
+async function readHudRuntimeManifest(id) {
+  try {
+    const parsed = JSON.parse(await fsp.readFile(hudRuntimeManifestPath(id), 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : { files: [] };
+  } catch { return { files: [] }; }
+}
+async function writeHudRuntimeManifest(id, data) {
+  await fsp.mkdir(instanceDir(id), { recursive: true });
+  await fsp.writeFile(hudRuntimeManifestPath(id), JSON.stringify(data, null, 2), 'utf8');
+}
+function hudRuntimeFileNames(manifest) {
+  return new Set((manifest?.files || []).flatMap(item => item?.fileName ? [item.fileName, `${item.fileName}.disabled`] : []));
+}
+async function cleanupInternalHudRuntime(id) {
+  const manifest = await readHudRuntimeManifest(id);
+  const mods = path.join(gameDir(id), 'mods');
+  for (const item of manifest.files || []) {
+    if (!item?.fileName) continue;
+    await fsp.rm(path.join(mods, path.basename(item.fileName)), { force: true }).catch(() => {});
+    await fsp.rm(path.join(mods, `${path.basename(item.fileName)}.disabled`), { force: true }).catch(() => {});
+  }
+  await writeHudRuntimeManifest(id, { loader: null, minecraftVersion: null, files: [], updatedAt: new Date().toISOString() });
+}
+function easyCraftHudBlock() {
+  return [
+    '# >>> EASYCRAFT_LAUNCHER_HUD >>>',
+    '==Section:BottomLeft,6,6,false==',
+    '&aEasyCraft Launcher&f로 실행 중',
+    '# <<< EASYCRAFT_LAUNCHER_HUD <<<'
+  ].join('\n');
+}
+async function patchCustomHudProfile(id) {
+  const dir = path.join(gameDir(id), 'config', 'custom-hud');
+  await fsp.mkdir(dir, { recursive: true });
+  for (const index of [1, 2, 3]) {
+    const profile = path.join(dir, `profile${index}.txt`);
+    let text = '';
+    try { text = await fsp.readFile(profile, 'utf8'); } catch {}
+    text = text.replace(/(?:^|\r?\n)# >>> EASYCRAFT_LAUNCHER_HUD >>>[\s\S]*?# <<< EASYCRAFT_LAUNCHER_HUD <<<(?:\r?\n|$)/g, '\n').trimEnd();
+    if (text) text += '\n\n';
+    text += `${easyCraftHudBlock()}\n`;
+    await fsp.writeFile(profile, text, 'utf8');
+  }
+}
+function normalizedModToken(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+async function activeManagedProjectRecord(id, projectId) {
+  const registry = await readRegistry(id);
+  const rec = registry.find(x => x.projectId === projectId || x.slug === projectId);
+  if (!rec || rec.disabled) return null;
+  const base = path.join(gameDir(id), rec.folder || 'mods', rec.fileName || '');
+  try { await fsp.access(base); return rec; } catch { return null; }
+}
+async function physicalModLooksPresent(id, project, expectedFileName = '') {
+  const mods = path.join(gameDir(id), 'mods');
+  await fsp.mkdir(mods, { recursive: true });
+  const names = await fsp.readdir(mods).catch(() => []);
+  if (expectedFileName && names.includes(expectedFileName)) return true;
+  const tokens = [project?.slug, project?.title].map(normalizedModToken).filter(x => x.length >= 5);
+  if (!tokens.length) return false;
+  return names.some(name => {
+    if (name.endsWith('.disabled')) return false;
+    const n = normalizedModToken(name);
+    return tokens.some(token => n.includes(token));
+  });
+}
+async function hudCompatibleFabricVersions(mcVersion, projectId) {
+  const params = new URLSearchParams({
+    include_changelog: 'false',
+    game_versions: JSON.stringify([mcVersion]),
+    loaders: JSON.stringify(['fabric'])
+  });
+  const versions = await fetchJson(`${MODRINTH_API}/project/${encodeURIComponent(projectId)}/version?${params}`);
+  return (versions || []).filter(v => v.status === 'listed' || !v.status).sort((a, b) => {
+    const rank = { release: 0, beta: 1, alpha: 2 };
+    const r = (rank[a.version_type] ?? 9) - (rank[b.version_type] ?? 9);
+    if (r !== 0) return r;
+    return new Date(b.date_published) - new Date(a.date_published);
+  });
+}
+async function collectHudRuntimePlan(instance, projectId, seen = new Set(), plan = []) {
+  if (!projectId || seen.has(projectId)) return plan;
+  seen.add(projectId);
+  const project = await getProject(projectId);
+  const versions = await hudCompatibleFabricVersions(instance.version, project.id || projectId);
+  const version = versions[0];
+  if (!version) throw new Error(`${project.title || project.slug || projectId}의 Minecraft ${instance.version}용 Fabric 버전을 찾을 수 없습니다.`);
+  for (const dep of version.dependencies || []) {
+    if (dep.dependency_type !== 'required') continue;
+    let depProjectId = dep.project_id || null;
+    if (!depProjectId && dep.version_id) {
+      try { depProjectId = (await getVersion(dep.version_id))?.project_id || null; } catch {}
+    }
+    if (depProjectId) await collectHudRuntimePlan(instance, depProjectId, seen, plan);
+  }
+  const file = chooseFile(version);
+  if (!file?.url || !file?.filename) throw new Error(`${project.title || project.slug || projectId} 다운로드 파일을 찾을 수 없습니다.`);
+  plan.push({ project, version, file });
+  return plan;
+}
+async function ensureMinecraftInGameHud(id, instance) {
+  // 현재 검증 가능한 True in-game HUD 경로는 Fabric용 CustomHud이다.
+  // Vanilla/Forge/NeoForge에서는 외부 오버레이로 속이지 않고 HUD 런타임만 정리한다.
+  if (instance.loader !== 'fabric') {
+    await cleanupInternalHudRuntime(id);
+    return { enabled: false, reason: 'unsupported-loader' };
+  }
+  await ensureInstanceFolders(id);
+  const oldManifest = await readHudRuntimeManifest(id);
+  const plan = await collectHudRuntimePlan(instance, 'customhud');
+  const newFiles = [];
+  const modsDir = path.join(gameDir(id), 'mods');
+  const keepNames = new Set();
+
+  for (const item of plan) {
+    const projectId = item.project.id;
+    const ext = path.extname(item.file.filename) || '.jar';
+    const slug = safeId(item.project.slug || projectId) || 'runtime-mod';
+    const runtimeName = `easycraft-runtime-${slug}-${safeId(item.version.id)}${ext}`;
+    const oldRuntime = (oldManifest.files || []).find(x => x.projectId === projectId && x.versionId === item.version.id && x.fileName);
+    if (oldRuntime) {
+      const oldPath = path.join(modsDir, path.basename(oldRuntime.fileName));
+      try {
+        await fsp.access(oldPath);
+        keepNames.add(oldRuntime.fileName);
+        newFiles.push(oldRuntime);
+        continue;
+      } catch {}
+    }
+    const managed = await activeManagedProjectRecord(id, projectId);
+    const manuallyPresent = await physicalModLooksPresent(id, item.project, item.file.filename);
+    if (managed || manuallyPresent) continue;
+    keepNames.add(runtimeName);
+    const destination = path.join(modsDir, runtimeName);
+    let exists = false;
+    try { await fsp.access(destination); exists = true; } catch {}
+    if (!exists) await downloadFile(item.file.url, destination, item.file.hashes || {});
+    newFiles.push({
+      projectId,
+      slug: item.project.slug || null,
+      versionId: item.version.id,
+      versionNumber: item.version.version_number || null,
+      fileName: runtimeName
+    });
+  }
+
+  // EasyCraft가 이전에 넣은 런타임 jar 중 현재 버전에 더 이상 쓰지 않는 것만 제거한다.
+  for (const old of oldManifest.files || []) {
+    if (!old?.fileName || keepNames.has(old.fileName)) continue;
+    await fsp.rm(path.join(modsDir, path.basename(old.fileName)), { force: true }).catch(() => {});
+    await fsp.rm(path.join(modsDir, `${path.basename(old.fileName)}.disabled`), { force: true }).catch(() => {});
+  }
+  await writeHudRuntimeManifest(id, {
+    loader: 'fabric', minecraftVersion: instance.version, provider: 'CustomHud',
+    files: newFiles, updatedAt: new Date().toISOString()
+  });
+  await patchCustomHudProfile(id);
+  return { enabled: true, provider: 'CustomHud' };
 }
 async function invalidateLoaderInstall(id) {
   // Minecraft 버전/로더 종류/로더 빌드가 바뀌면 이전 설치 결과를 재사용하지 않는다.
@@ -621,8 +698,10 @@ ipcMain.handle('list-content', async (_event, id, type) => {
   const folder = targetFolder(id, type); await fsp.mkdir(folder, { recursive: true });
   const meta = validateContentType(type); let registry = await managedForType(id, type); registry = await enrichRegistryIcons(id, registry);
   const byFile = new Map(registry.map(x => [x.fileName, x]));
+  const internalHudFiles = type === 'mods' ? hudRuntimeFileNames(await readHudRuntimeManifest(id)) : new Set();
   const names = await fsp.readdir(folder);
   return names.filter(name => {
+    if (internalHudFiles.has(name)) return false;
     const raw = name.endsWith('.disabled') ? name.slice(0, -9) : name;
     return meta.extensions.includes(path.extname(raw).toLowerCase());
   }).map(name => {
@@ -733,7 +812,9 @@ ipcMain.handle('delete-all-content', async (_event, id, type) => {
   try {
     const folder = targetFolder(id, type); await fsp.mkdir(folder, { recursive: true });
     const meta = validateContentType(type);
+    const internalHudFiles = type === 'mods' ? hudRuntimeFileNames(await readHudRuntimeManifest(id)) : new Set();
     const names = (await fsp.readdir(folder)).filter(name => {
+      if (internalHudFiles.has(name)) return false;
       const raw = name.endsWith('.disabled') ? name.slice(0, -9) : name;
       return meta.extensions.includes(path.extname(raw).toLowerCase());
     });
@@ -1394,7 +1475,6 @@ function startLaunchWatchdog(ref) {
 function finishLaunchRef(ref, { error = null, closed = false, code = null } = {}) {
   if (activeLauncher !== ref) return;
   clearLaunchWatchdog(ref);
-  stopGameOverlay();
   const id = ref.instanceId;
   const wasRunning = ref.state === 'running';
   activeLauncher = null;
@@ -1456,7 +1536,6 @@ function spawnMinecraftWorker(ref) {
       clearLaunchWatchdog(ref);
       emitLaunchState('running', ref.instanceId, { name: ref.instance.name });
       send('launch-progress', { percent: 100, text: 'Minecraft 실행 중' });
-      startGameOverlay(worker.pid);
       writeLaunchReadyMarker(ref.instanceId, ref.instance);
     } else if (message.type === 'error') {
       ref.workerTerminalMessage = true;
@@ -1492,7 +1571,6 @@ ipcMain.handle('stop-game', async (_event, id) => {
 
   // 준비 다운로드와 실행된 Java가 같은 worker 프로세스 트리에 있으므로 한 번에 즉시 종료한다.
   if (ref.worker) killWorkerTree(ref.worker);
-  stopGameOverlay();
   activeLauncher = null;
   send('launch-closed', { instanceId:id, cancelled:true });
   emitLaunchState('idle', id, { cancelled:true });
@@ -1557,6 +1635,12 @@ ipcMain.handle('launch-game', async (_event, id) => {
   config = automatic.config;
   const instance = automatic.instance;
   await ensureInstanceFolders(id);
+  try {
+    await ensureMinecraftInGameHud(id, instance);
+  } catch (error) {
+    // HUD 준비 실패가 Minecraft 실행 자체를 막지는 않도록 한다.
+    await appendLauncherLog(id, `INGAME HUD WARNING ${error.message || error}`).catch(() => {});
+  }
   const settings = instance.settings;
 
   if (settings.javaPath) {
@@ -1608,7 +1692,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.8 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.11 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes };

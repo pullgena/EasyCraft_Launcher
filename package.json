@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.10",
-  "description": "EasyCraft Launcher 0.4.10 - safe data-preserving updates, in-game launch badge, and conditional mod update actions",
+  "version": "0.4.11",
+  "description": "EasyCraft Launcher 0.4.11 - true Minecraft in-game HUD for Fabric and safe launcher updates",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
