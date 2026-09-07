@@ -1,6 +1,6 @@
-# EasyCraft Launcher 0.4.11
+# EasyCraft Launcher 0.4.12
 
-Windows Minecraft Java launcher with isolated instances, in-app Modrinth mods/resource packs/shaders/modpacks, automatic search, content detail panels, and launcher updates.
+Windows Minecraft Java launcher with isolated instances, in-app Modrinth content, live Minecraft logs, automatic log cleanup, infinite discovery, paged search, and launcher updates.
 
 ## Build
 

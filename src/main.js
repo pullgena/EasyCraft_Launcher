@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.11 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.12 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -62,7 +62,12 @@ function normalizeInstance(instance, legacyMemory = null) {
   };
 }
 function defaultConfig() {
-  return { selectedInstanceId: null, memory: { min: 2, max: 6 }, instances: [] };
+  return {
+    selectedInstanceId: null,
+    memory: { min: 2, max: 6 },
+    launcherSettings: { autoDeleteLogs: true },
+    instances: []
+  };
 }
 async function ensureBase() {
   await fsp.mkdir(instancesDir(), { recursive: true });
@@ -75,6 +80,7 @@ async function readConfig() {
     return {
       ...defaultConfig(), ...parsed,
       memory: { ...defaultConfig().memory, ...(parsed.memory || {}) },
+      launcherSettings: { ...defaultConfig().launcherSettings, ...(parsed.launcherSettings || {}) },
       instances: Array.isArray(parsed.instances) ? parsed.instances.map(i => normalizeInstance(i, parsed.memory)) : []
     };
   } catch {
@@ -194,6 +200,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
+  await cleanupOldLogs();
   await createWindow();
   loadSavedAccount().then(summary => send('account-changed', summary));
   initAutoUpdater();
@@ -295,6 +302,53 @@ async function ensureInstanceFolders(id) {
     fsp.mkdir(path.join(root, 'saves'), { recursive: true }),
     fsp.mkdir(logsDir(id), { recursive: true })
   ]);
+}
+
+async function cleanupOldLogs(config = null) {
+  try {
+    const cfg = config || await readConfig();
+    if (cfg.launcherSettings?.autoDeleteLogs === false) return { deleted: 0 };
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    let deleted = 0;
+    for (const inst of cfg.instances || []) {
+      const dir = logsDir(inst.id);
+      const files = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+      const logs = [];
+      for (const entry of files) {
+        if (!entry.isFile() || !entry.name.endsWith('.log')) continue;
+        const full = path.join(dir, entry.name);
+        const st = await fsp.stat(full).catch(() => null);
+        if (st) logs.push({ full, mtime: st.mtimeMs });
+      }
+      logs.sort((a, b) => b.mtime - a.mtime);
+      for (let i = 0; i < logs.length; i++) {
+        if (logs[i].mtime < cutoff || i >= 10) {
+          await fsp.rm(logs[i].full, { force: true }).catch(() => {});
+          deleted++;
+        }
+      }
+    }
+    return { deleted };
+  } catch { return { deleted: 0 }; }
+}
+
+async function readInstanceLogLines(id, maxLines = 1800) {
+  const dir = logsDir(id);
+  const files = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const rows = [];
+  for (const entry of files) {
+    if (!entry.isFile() || !entry.name.endsWith('.log')) continue;
+    const full = path.join(dir, entry.name);
+    const st = await fsp.stat(full).catch(() => null);
+    if (st) rows.push({ full, mtime: st.mtimeMs });
+  }
+  rows.sort((a, b) => a.mtime - b.mtime);
+  let lines = [];
+  for (const item of rows.slice(-4)) {
+    const text = await fsp.readFile(item.full, 'utf8').catch(() => '');
+    if (text) lines.push(...text.split(/\r?\n/).filter(Boolean));
+  }
+  return lines.slice(-Math.max(100, Math.min(5000, Number(maxLines) || 1800)));
 }
 
 // ---------- 실제 Minecraft 인게임 HUD ----------
@@ -476,6 +530,31 @@ ipcMain.handle('bootstrap', async () => {
     launchState: activeLauncher ? { state: activeLauncher.state || 'preparing', instanceId: activeLauncher.instanceId } : { state: 'idle', instanceId: null },
     updateState: launcherUpdateState
   };
+});
+ipcMain.handle('get-instance-logs', async (_event, id, maxLines = 1800) => {
+  try {
+    const { instance } = await getInstance(id);
+    if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
+    return { ok: true, instanceId: id, lines: await readInstanceLogLines(id, maxLines) };
+  } catch (error) { return { ok: false, lines: [], error: error.message }; }
+});
+ipcMain.handle('clear-instance-logs', async (_event, id) => {
+  try {
+    const { instance } = await getInstance(id);
+    if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
+    await fsp.rm(logsDir(id), { recursive: true, force: true });
+    await fsp.mkdir(logsDir(id), { recursive: true });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
+ipcMain.handle('update-launcher-settings', async (_event, patch = {}) => {
+  try {
+    const config = await readConfig();
+    config.launcherSettings = { ...defaultConfig().launcherSettings, ...(config.launcherSettings || {}), ...(patch || {}) };
+    await writeConfig(config);
+    if (config.launcherSettings.autoDeleteLogs !== false) await cleanupOldLogs(config);
+    return { ok: true, config };
+  } catch (error) { return { ok: false, error: error.message }; }
 });
 ipcMain.handle('fetch-versions', async () => {
   try {
@@ -941,7 +1020,7 @@ function modrinthFacets(instance, type) {
   if (meta.projectType === 'mod' && instance.loader !== 'vanilla') facets.push([`categories:${instance.loader}`]);
   return facets;
 }
-ipcMain.handle('modrinth-search', async (_event, id, type, query) => {
+ipcMain.handle('modrinth-search', async (_event, id, type, query, offset = 0, limit = 30) => {
   try {
     const { instance } = await getInstance(id);
     if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
@@ -949,11 +1028,15 @@ ipcMain.handle('modrinth-search', async (_event, id, type, query) => {
     if (meta.projectType === 'mod' && instance.loader === 'vanilla') {
       return { ok: false, error: 'Vanilla 인스턴스에는 모드를 설치할 수 없습니다. Fabric/Forge/NeoForge/Quilt 인스턴스를 만들어 주세요.' };
     }
+    const cleanQuery = String(query || '').trim();
+    const safeLimit = Math.max(1, Math.min(100, Number(limit) || 30));
+    const safeOffset = Math.max(0, Number(offset) || 0);
     const params = new URLSearchParams({
-      query: String(query || '').trim(),
+      query: cleanQuery,
       facets: JSON.stringify(modrinthFacets(instance, type)),
-      index: String(query || '').trim() ? 'relevance' : 'downloads',
-      limit: '30'
+      index: cleanQuery ? 'relevance' : 'downloads',
+      limit: String(safeLimit),
+      offset: String(safeOffset)
     });
     const data = await fetchJson(`${MODRINTH_API}/search?${params}`);
     const registry = await readRegistry(id);
@@ -961,6 +1044,9 @@ ipcMain.handle('modrinth-search', async (_event, id, type, query) => {
     for (const rec of registry) if (await recordFileExists(id, rec)) installed.add(rec.projectId);
     return {
       ok: true,
+      offset: Number(data.offset ?? safeOffset),
+      limit: Number(data.limit ?? safeLimit),
+      totalHits: Number(data.total_hits ?? 0),
       results: (data.hits || []).map(h => ({
         projectId: h.project_id, title: h.title, description: h.description, author: h.author,
         iconUrl: h.icon_url, downloads: h.downloads, projectType: h.project_type,
@@ -1381,8 +1467,11 @@ async function writeLaunchReadyMarker(id, instance) {
 async function appendLauncherLog(id, text) {
   try {
     await fsp.mkdir(logsDir(id), { recursive: true });
-    const stamp = new Date().toISOString().slice(0, 10);
-    await fsp.appendFile(path.join(logsDir(id), `launcher-${stamp}.log`), `[${new Date().toISOString()}] ${text}\n`, 'utf8');
+    const now = new Date().toISOString();
+    const stamp = now.slice(0, 10);
+    const line = `[${now}] ${text}`;
+    await fsp.appendFile(path.join(logsDir(id), `launcher-${stamp}.log`), `${line}\n`, 'utf8');
+    send('game-log', { instanceId: id, line, at: now });
   } catch {}
 }
 function splitArgsLines(text) {
@@ -1485,6 +1574,7 @@ function finishLaunchRef(ref, { error = null, closed = false, code = null } = {}
     send('launch-closed', { instanceId:id, code });
     emitLaunchState('idle', id);
   }
+  cleanupOldLogs().catch(() => {});
   if (closed && wasRunning && ref.instance?.settings?.autoUpdateContent) {
     setTimeout(async () => {
       try {
@@ -1531,6 +1621,8 @@ function spawnMinecraftWorker(ref) {
       send('launch-progress', { percent: message.percent ?? null, text: message.text || 'Minecraft 준비 중…' });
     } else if (message.type === 'activity') {
       send('launch-progress', { text: message.text || 'Minecraft 준비 중…' });
+    } else if (message.type === 'log') {
+      send('game-log', { instanceId: ref.instanceId, line: message.line || '', at: message.at || new Date().toISOString() });
     } else if (message.type === 'running') {
       ref.state = 'running';
       clearLaunchWatchdog(ref);
@@ -1692,7 +1784,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.11 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.12 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes };

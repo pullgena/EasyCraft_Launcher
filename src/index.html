@@ -13,6 +13,7 @@
       <nav class="nav" aria-label="메인 메뉴">
         <button class="nav-btn active" data-view="home" title="플레이"><span>▶</span><em>플레이</em></button>
         <button class="nav-btn" data-view="content" title="콘텐츠"><span>◆</span><em>콘텐츠</em></button>
+        <button class="nav-btn" data-view="logs" title="로그"><span>≡</span><em>로그</em></button>
         <button class="nav-btn" data-view="settings" title="설정"><span>⚙</span><em>설정</em></button>
       </nav>
       <div class="rail-space"></div>
@@ -87,7 +88,9 @@
               <div class="library-title"><div><h3>Modrinth에서 찾기</h3><p>호환되는 인기 콘텐츠를 바로 보여드립니다.</p></div></div>
               <div class="search-row"><span class="search-mark">⌕</span><input id="searchInput" class="input search-input" placeholder="입력하면 자동으로 검색됩니다" /><span class="search-live" id="searchLiveStatus">자동 검색</span></div>
               <div class="update-strip hidden" id="contentUpdateStrip"><span id="contentUpdateText"></span></div>
+              <div class="search-pager hidden" id="searchPagerTop"></div>
               <div class="result-list" id="searchResults"><div class="empty">Modrinth 인기 콘텐츠를 불러오는 중…</div></div>
+              <div class="search-pager hidden" id="searchPagerBottom"></div>
             </section>
 
             <aside class="installed-panel">
@@ -106,6 +109,18 @@
               <div class="installed-list" id="installedList"><div class="empty">설치된 콘텐츠가 없습니다.</div></div>
             </aside>
           </div>
+        </section>
+
+        <section class="view logs-view" id="view-logs">
+          <div class="flat-head log-head">
+            <div><span class="kicker">LIVE LOGS</span><h2>실시간 로그</h2><p id="logContext">선택한 인스턴스의 Minecraft 로그를 표시합니다.</p></div>
+            <div class="flat-actions"><button id="refreshLogsBtn">새로고침</button><button id="clearLogsBtn">로그 지우기</button></div>
+          </div>
+          <div class="log-toolbar">
+            <span class="log-live"><i></i><b id="logLiveState">대기 중</b></span>
+            <label class="log-autoscroll"><input type="checkbox" id="logAutoScroll" checked /><span>자동 스크롤</span></label>
+          </div>
+          <pre class="log-terminal" id="logTerminal">인스턴스를 선택하면 로그를 불러옵니다.</pre>
         </section>
 
         <section class="view settings-view" id="view-settings">
@@ -128,11 +143,16 @@
             </section>
             <section class="setting-row">
               <div class="setting-index">04</div>
+              <div class="setting-copy"><span>LOGS</span><h3>로그 자동 삭제</h3><p>7일이 지난 로그와 오래된 로그 파일을 자동으로 정리합니다.</p></div>
+              <div class="setting-actions"><label class="switch-line setting-switch"><input type="checkbox" id="autoDeleteLogsToggle" checked /><span>자동 삭제</span></label></div>
+            </section>
+            <section class="setting-row">
+              <div class="setting-index">05</div>
               <div class="setting-copy"><span>FILES</span><h3>인스턴스 파일</h3><p>현재 인스턴스의 Minecraft 폴더를 엽니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsOpenFolderBtn">폴더 열기</button></div>
             </section>
             <section class="setting-row uninstall-row">
-              <div class="setting-index">05</div>
+              <div class="setting-index">06</div>
               <div class="setting-copy"><span>UNINSTALL</span><h3>EasyCraft Launcher 삭제</h3><p>런처와 EasyCraft가 관리하는 Minecraft 데이터를 이 PC에서 제거합니다.</p></div>
               <div class="setting-actions"><button class="setting-button danger" id="uninstallEasyCraftBtn">EasyCraft 삭제</button></div>
             </section>

@@ -9,6 +9,7 @@ let finished = false;
 let lastProgressSentAt = 0;
 let lastProgressValue = -1;
 let logPath = null;
+let instanceId = null;
 
 function send(type, payload = {}) {
   const message = { type, ...payload };
@@ -21,11 +22,16 @@ function send(type, payload = {}) {
 }
 
 function writeLog(text) {
-  if (!logPath || !text) return;
-  try {
-    fs.mkdirSync(path.dirname(logPath), { recursive: true });
-    fs.appendFileSync(logPath, `[${new Date().toISOString()}] ${String(text).trim()}\n`, 'utf8');
-  } catch {}
+  if (!text) return;
+  const now = new Date().toISOString();
+  const line = `[${now}] ${String(text).trim()}`;
+  if (logPath) {
+    try {
+      fs.mkdirSync(path.dirname(logPath), { recursive: true });
+      fs.appendFileSync(logPath, `${line}\n`, 'utf8');
+    } catch {}
+  }
+  send('log', { instanceId, line, at: now });
 }
 
 function errorText(err) {
@@ -71,6 +77,7 @@ function startLaunch(payload) {
   const options = payload?.options;
   if (!options) return finishWithError('Minecraft 실행 옵션이 전달되지 않았습니다.');
   logPath = payload.logPath || null;
+  instanceId = payload.instanceId || null;
 
   launcher = new Launch();
   let runningSent = false;

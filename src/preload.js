@@ -26,7 +26,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   openContentFolder: (id, type) => ipcRenderer.invoke('open-content-folder', id, type),
   openInstanceFolder: id => ipcRenderer.invoke('open-instance-folder', id),
 
-  modrinthSearch: (id, type, query) => ipcRenderer.invoke('modrinth-search', id, type, query),
+  modrinthSearch: (id, type, query, offset = 0, limit = 30) => ipcRenderer.invoke('modrinth-search', id, type, query, offset, limit),
   modrinthProjectDetail: (id, projectId) => ipcRenderer.invoke('modrinth-project-detail', id, projectId),
   modrinthInstallPlan: (id, projectId) => ipcRenderer.invoke('modrinth-install-plan', id, projectId),
   modrinthInstall: (id, projectId, allowDependencies = false) => ipcRenderer.invoke('modrinth-install', id, projectId, allowDependencies),
@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   launchGame: id => ipcRenderer.invoke('launch-game', id),
   stopGame: id => ipcRenderer.invoke('stop-game', id),
   getLaunchState: () => ipcRenderer.invoke('get-launch-state'),
+  getInstanceLogs: (id, maxLines = 1800) => ipcRenderer.invoke('get-instance-logs', id, maxLines),
+  clearInstanceLogs: id => ipcRenderer.invoke('clear-instance-logs', id),
+  updateLauncherSettings: patch => ipcRenderer.invoke('update-launcher-settings', patch),
 
   checkLauncherUpdate: () => ipcRenderer.invoke('check-launcher-update'),
   downloadLauncherUpdate: () => ipcRenderer.invoke('download-launcher-update'),
