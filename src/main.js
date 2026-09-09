@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, utilityProcess, nativeImage, clipboard } = require('electron');
 const { execFile, spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -12,8 +12,11 @@ let currentAccount = null;
 let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
+const deviceLoginSessions = new Map();
+const DEVICE_LOGIN_CLIENT_ID = '00000000402b5328';
+const DEVICE_LOGIN_REDIRECT_URI = 'https://login.live.com/oauth20_desktop.srf';
 
-const APP_UA = 'EasyCraftLauncher/0.4.12 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.13-beta.2 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -116,8 +119,12 @@ function accountSummary(account) {
     uuid: account.uuid || account.id || account.profile?.id || null,
     skinUrl: account._easycraftSkinUrl || null,
     faceUrl: account._easycraftFaceDataUrl || null,
-    faceOverlayUrl: account._easycraftFaceOverlayDataUrl || null
+    faceOverlayUrl: account._easycraftFaceOverlayDataUrl || null,
+    offlineCached: !!account._easycraftOfflineCached
   };
+}
+function isUsableCachedMicrosoftAccount(account) {
+  return !!account && !account.error && !!account.refresh_token && !!account.access_token && !!account.uuid && !!account.name && !!account.meta;
 }
 async function fetchSkinUrlForAccount(account) {
   const uuid = String(account?.uuid || account?.id || account?.profile?.id || '').replace(/-/g, '');
@@ -166,21 +173,32 @@ async function refreshAccountVisual(account) {
   return summary;
 }
 async function loadSavedAccount() {
+  let cached = null;
   try {
-    const account = JSON.parse(await fsp.readFile(accountPath(), 'utf8'));
-    if (!account.refresh_token) return null;
-    const refreshed = await new Microsoft().refresh(account);
+    cached = JSON.parse(await fsp.readFile(accountPath(), 'utf8'));
+    if (!isUsableCachedMicrosoftAccount(cached)) return null;
+    // 네트워크가 끊겨 있어도 마지막으로 정상 인증된 계정 정보를 먼저 보존합니다.
+    // 이 캐시는 Vanilla 싱글플레이 오프라인 fallback에만 사용됩니다.
+    currentAccount = cached;
+    accountRefreshedAt = Number(cached._easycraftRefreshedAt || 0);
+    const refreshed = await new Microsoft().refresh(cached);
     if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'Microsoft 인증 갱신 실패');
-    refreshed._easycraftSkinUrl = account._easycraftSkinUrl || null;
-    refreshed._easycraftFaceDataUrl = account._easycraftFaceDataUrl || null;
-    refreshed._easycraftFaceOverlayDataUrl = account._easycraftFaceOverlayDataUrl || null;
+    refreshed._easycraftSkinUrl = cached._easycraftSkinUrl || null;
+    refreshed._easycraftFaceDataUrl = cached._easycraftFaceDataUrl || null;
+    refreshed._easycraftFaceOverlayDataUrl = cached._easycraftFaceOverlayDataUrl || null;
     refreshed._easycraftRefreshedAt = Date.now();
+    refreshed._easycraftOfflineCached = false;
     await fsp.writeFile(accountPath(), JSON.stringify(refreshed, null, 2), 'utf8');
     accountRefreshedAt = Date.now();
     currentAccount = refreshed;
     setTimeout(() => refreshAccountVisual(refreshed).catch(() => {}), 50).unref?.();
     return accountSummary(refreshed);
   } catch {
+    if (isUsableCachedMicrosoftAccount(cached)) {
+      cached._easycraftOfflineCached = true;
+      currentAccount = cached;
+      return accountSummary(cached);
+    }
     currentAccount = null;
     return null;
   }
@@ -227,6 +245,107 @@ async function fetchText(url, opts = {}) {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.text();
+}
+
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+async function postForm(url, values) {
+  const body = new URLSearchParams(values);
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+      'User-Agent': APP_UA
+    },
+    body
+  });
+  let data = {};
+  try { data = await res.json(); } catch { data = { error: `HTTP_${res.status}` }; }
+  return { ok: res.ok, status: res.status, data };
+}
+function friendlyMicrosoftAuthError(error) {
+  const raw = String(error?.error || error?.message || error || 'Microsoft 인증에 실패했습니다.');
+  if (/authorization_declined/i.test(raw)) return 'Microsoft 로그인 승인이 취소되었습니다.';
+  if (/expired_token|code_expired/i.test(raw)) return '인증 코드가 만료되었습니다. 다시 시도해 주세요.';
+  if (/NO_MINECRAFT_ACCOUNT/i.test(raw)) return '이 Microsoft 계정에 Minecraft Java 프로필이 없습니다.';
+  if (/NO_MINECRAFT_ENTITLEMENTS/i.test(raw)) return '이 계정에서 Minecraft Java Edition 소유권을 확인하지 못했습니다.';
+  return raw;
+}
+async function persistMicrosoftAccount(account) {
+  if (!account || account.error) throw new Error(friendlyMicrosoftAuthError(account));
+  account._easycraftRefreshedAt = Date.now();
+  account._easycraftOfflineCached = false;
+  accountRefreshedAt = Date.now();
+  currentAccount = account;
+  preparedLaunchers.clear();
+  await fsp.mkdir(dataDir(), { recursive: true });
+  await fsp.writeFile(accountPath(), JSON.stringify(account, null, 2), 'utf8');
+  const summary = accountSummary(account);
+  setTimeout(() => refreshAccountVisual(account).catch(() => {}), 50).unref?.();
+  send('account-changed', summary);
+  return summary;
+}
+async function createDeviceLoginSession() {
+  const id = crypto.randomUUID();
+  const state = crypto.randomBytes(18).toString('hex');
+  const url = new URL('https://login.live.com/oauth20_authorize.srf');
+  url.searchParams.set('client_id', DEVICE_LOGIN_CLIENT_ID);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('redirect_uri', DEVICE_LOGIN_REDIRECT_URI);
+  url.searchParams.set('scope', 'XboxLive.signin offline_access');
+  url.searchParams.set('cobrandid', '8058f65d-ce06-4c30-9559-473c9275a65d');
+  url.searchParams.set('prompt', 'select_account');
+  url.searchParams.set('state', state);
+  const session = {
+    id, state, authUrl: url.toString(),
+    expiresAt: Date.now() + (15 * 60 * 1000),
+    cancelled: false
+  };
+  deviceLoginSessions.set(id, session);
+  return session;
+}
+function parseCompletedMicrosoftRedirect(value, expectedState) {
+  const raw = String(value || '').trim();
+  if (!raw) throw new Error('휴대폰에서 로그인을 마친 뒤 마지막 주소 전체를 붙여넣어 주세요.');
+  let parsed;
+  try { parsed = new URL(raw); } catch { throw new Error('주소 형식이 올바르지 않습니다. 브라우저 주소창의 마지막 주소 전체를 복사해 주세요.'); }
+  if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'login.live.com' || !parsed.pathname.toLowerCase().includes('oauth20_desktop.srf')) {
+    throw new Error('Microsoft 로그인 완료 주소가 아닙니다. login.live.com으로 시작하는 마지막 주소를 붙여넣어 주세요.');
+  }
+  const error = parsed.searchParams.get('error');
+  if (error) throw new Error(parsed.searchParams.get('error_description') || error);
+  const state = parsed.searchParams.get('state');
+  if (!state || state !== expectedState) throw new Error('인증 세션 확인에 실패했습니다. 다른 기기 로그인을 처음부터 다시 시작해 주세요.');
+  const code = parsed.searchParams.get('code');
+  if (!code) throw new Error('인증 코드가 주소에 없습니다. Microsoft 로그인이 완료된 뒤의 마지막 주소를 복사해 주세요.');
+  return code;
+}
+async function finishDeviceLogin(sessionId, completedUrl) {
+  const session = deviceLoginSessions.get(String(sessionId || ''));
+  if (!session) throw new Error('인증 세션을 찾을 수 없습니다. 다시 시작해 주세요.');
+  try {
+    if (session.cancelled) throw new Error('DEVICE_LOGIN_CANCELLED');
+    if (Date.now() >= session.expiresAt) throw new Error('인증 시간이 만료되었습니다. 다시 시도해 주세요.');
+    const code = parseCompletedMicrosoftRedirect(completedUrl, session.state);
+    const tokenResult = await postForm('https://login.live.com/oauth20_token.srf', {
+      client_id: DEVICE_LOGIN_CLIENT_ID,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: DEVICE_LOGIN_REDIRECT_URI
+    });
+    const oauth2 = tokenResult.data || {};
+    if (!tokenResult.ok || !oauth2.access_token) {
+      throw new Error(oauth2.error_description || oauth2.error || `Microsoft 토큰 교환에 실패했습니다. (HTTP ${tokenResult.status})`);
+    }
+    const microsoft = new Microsoft(DEVICE_LOGIN_CLIENT_ID, DEVICE_LOGIN_REDIRECT_URI);
+    if (typeof microsoft.getAccount !== 'function') throw new Error('현재 인증 모듈에서 Minecraft 계정 변환을 지원하지 않습니다.');
+    const account = await microsoft.getAccount(oauth2);
+    const summary = await persistMicrosoftAccount(account);
+    send('status', { text:`${summary?.name || '계정'} 다른 기기 로그인 완료`, kind:'success' });
+    return { ok:true, account:summary };
+  } finally {
+    deviceLoginSessions.delete(String(sessionId || ''));
+  }
 }
 function versionParts(value) {
   return String(value || '').split(/[^0-9A-Za-z]+/).filter(Boolean).map(part => /^\d+$/.test(part) ? Number(part) : part.toLowerCase());
@@ -597,20 +716,45 @@ ipcMain.handle('login-microsoft', async () => {
     send('status', { text: 'Microsoft 로그인 창을 준비하고 있습니다…', kind: 'info' });
     const account = await new Microsoft().getAuth();
     if (!account || account.error) throw new Error(account?.error || '로그인에 실패했습니다.');
-    account._easycraftRefreshedAt = Date.now();
-    accountRefreshedAt = Date.now();
-    currentAccount = account;
-    preparedLaunchers.clear(); // 계정이 바뀌면 캐시된 실행기의 이전 인증 정보를 재사용하지 않습니다.
-    await fsp.writeFile(accountPath(), JSON.stringify(account, null, 2), 'utf8');
-    const summary = accountSummary(account);
-    setTimeout(() => refreshAccountVisual(account).catch(() => {}), 50).unref?.();
-    send('account-changed', summary);
+    const summary = await persistMicrosoftAccount(account);
     send('status', { text: `${summary?.name || '계정'} 로그인 완료`, kind: 'success' });
     return { ok: true, account: summary };
   } catch (error) {
     send('status', { text: `로그인 실패: ${error.message}`, kind: 'error' });
     return { ok: false, error: error.message };
   }
+});
+ipcMain.handle('device-login-start', async () => {
+  try {
+    const session = await createDeviceLoginSession();
+    return { ok:true, sessionId:session.id, authUrl:session.authUrl, expiresAt:session.expiresAt };
+  } catch (error) { return { ok:false, error:friendlyMicrosoftAuthError(error) }; }
+});
+ipcMain.handle('device-login-complete', async (_event, sessionId, completedUrl) => {
+  try { return await finishDeviceLogin(sessionId, completedUrl); }
+  catch (error) {
+    if (String(error?.message || '') === 'DEVICE_LOGIN_CANCELLED') return { ok:false, cancelled:true };
+    return { ok:false, error:friendlyMicrosoftAuthError(error) };
+  }
+});
+ipcMain.handle('device-login-cancel', async (_event, sessionId) => {
+  const session = deviceLoginSessions.get(String(sessionId || ''));
+  if (session) session.cancelled = true;
+  deviceLoginSessions.delete(String(sessionId || ''));
+  return { ok:true };
+});
+ipcMain.handle('device-login-open-url', async (_event, url) => {
+  try {
+    const target = String(url || '');
+    const parsed = new URL(target);
+    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'login.live.com') throw new Error('허용되지 않은 Microsoft 인증 주소입니다.');
+    await shell.openExternal(target);
+    return { ok:true };
+  } catch (error) { return { ok:false, error:error.message }; }
+});
+ipcMain.handle('device-login-copy-link', async (_event, url) => {
+  try { clipboard.writeText(String(url || '')); return { ok:true }; }
+  catch (error) { return { ok:false, error:error.message }; }
 });
 ipcMain.handle('logout', async () => {
   currentAccount = null;
@@ -1509,22 +1653,64 @@ function isRetryableLaunchError(message) {
   return /timeout|timed out|ECONN|ENOTFOUND|EAI_AGAIN|socket|network|download|fetch|HTTP 5\d\d|aborted|unexpected end|premature|corrupt|checksum|extract/i.test(String(message || ''));
 }
 async function ensureFreshAccountForLaunch() {
-  if (!currentAccount) return false;
+  if (!currentAccount || !isUsableCachedMicrosoftAccount(currentAccount)) return { ok:false, cached:false };
   const stamped = Number(currentAccount._easycraftRefreshedAt || accountRefreshedAt || 0);
-  // 실행할 때마다 인증 서버를 기다리지 않고, 충분히 오래된 경우에만 갱신한다.
-  if (Date.now() - stamped < 6 * 60 * 60 * 1000) return true;
+  // 실행할 때마다 인증 서버를 기다리지 않고, 충분히 최근에 확인된 계정은 그대로 사용합니다.
+  if (!currentAccount._easycraftOfflineCached && Date.now() - stamped < 6 * 60 * 60 * 1000) return { ok:true, cached:false };
   try {
-    const refreshed = await new Microsoft().refresh(currentAccount);
-    if (!refreshed || refreshed.error) return false;
-    refreshed._easycraftSkinUrl = currentAccount._easycraftSkinUrl || null;
-    refreshed._easycraftFaceDataUrl = currentAccount._easycraftFaceDataUrl || null;
-    refreshed._easycraftFaceOverlayDataUrl = currentAccount._easycraftFaceOverlayDataUrl || null;
+    const previous = currentAccount;
+    const refreshed = await new Microsoft().refresh(previous);
+    if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'Microsoft 인증 갱신 실패');
+    refreshed._easycraftSkinUrl = previous._easycraftSkinUrl || null;
+    refreshed._easycraftFaceDataUrl = previous._easycraftFaceDataUrl || null;
+    refreshed._easycraftFaceOverlayDataUrl = previous._easycraftFaceOverlayDataUrl || null;
     refreshed._easycraftRefreshedAt = Date.now();
+    refreshed._easycraftOfflineCached = false;
     currentAccount = refreshed; accountRefreshedAt = Date.now();
     await fsp.writeFile(accountPath(), JSON.stringify(refreshed, null, 2), 'utf8');
     send('account-changed', accountSummary(refreshed));
-    return true;
-  } catch { return false; }
+    return { ok:true, cached:false };
+  } catch {
+    // 마지막 정상 인증 계정은 버리지 않습니다. Vanilla에서만 제한적으로 오프라인 fallback에 사용합니다.
+    currentAccount._easycraftOfflineCached = true;
+    send('account-changed', accountSummary(currentAccount));
+    return { ok:false, cached:true };
+  }
+}
+
+async function resolveCachedVanillaOfflineFiles(id, instance, settings) {
+  const root = gameDir(id);
+  const version = String(instance.version || '').trim();
+  if (!version || version === 'latest_release' || version === 'latest_snapshot') {
+    throw new Error('오프라인 실행 전에 온라인 상태에서 사용할 Minecraft 버전을 한 번 선택하고 실행해 주세요.');
+  }
+  const versionDir = path.join(root, 'versions', version);
+  const versionJsonPath = path.join(versionDir, `${version}.json`);
+  const clientJarPath = path.join(versionDir, `${version}.jar`);
+  let versionJson;
+  try { versionJson = JSON.parse(await fsp.readFile(versionJsonPath, 'utf8')); }
+  catch { throw new Error(`Minecraft ${version}의 로컬 실행 정보가 없습니다. 온라인 상태에서 이 인스턴스를 한 번 실행해 설치를 완료해 주세요.`); }
+  try { await fsp.access(clientJarPath); }
+  catch { throw new Error(`Minecraft ${version} 게임 파일이 아직 설치되지 않았습니다. 온라인 상태에서 한 번 실행해 주세요.`); }
+
+  let javaPath = String(settings.javaPath || '').trim();
+  if (!javaPath) {
+    const component = String(versionJson?.javaVersion?.component || 'jre-legacy');
+    const exeName = process.platform === 'win32' ? 'javaw.exe' : 'java';
+    const candidate = path.join(root, 'runtime', component, 'bin', exeName);
+    try { if ((await fsp.stat(candidate)).isFile()) javaPath = candidate; } catch {}
+  }
+  if (!javaPath) {
+    throw new Error('오프라인 실행에 사용할 Java 런타임이 없습니다. 온라인 상태에서 이 인스턴스를 한 번 실행하거나 Java 경로를 직접 지정해 주세요.');
+  }
+
+  let assetIndexPath = null;
+  if (versionJson?.assetIndex?.id) {
+    assetIndexPath = path.join(root, 'assets', 'indexes', `${versionJson.assetIndex.id}.json`);
+    try { await fsp.access(assetIndexPath); }
+    catch { throw new Error('Minecraft 에셋 인덱스가 아직 준비되지 않았습니다. 온라인 상태에서 이 인스턴스를 한 번 실행해 주세요.'); }
+  }
+  return { version, root, versionJsonPath, assetIndexPath, javaPath };
 }
 
 ipcMain.handle('get-launch-state', async () => {
@@ -1650,7 +1836,7 @@ function spawnMinecraftWorker(ref) {
     const msg = `Minecraft 준비 프로세스가 예기치 않게 종료되었습니다${code !== null ? ` (코드 ${code})` : ''}${signal ? ` · ${signal}` : ''}.`;
     if (!retryLaunchWorker(ref, msg)) finishLaunchRef(ref, { error:msg });
   });
-  worker.postMessage({ type:'launch', options:ref.options, instanceId:ref.instanceId, name:ref.instance.name, logPath:launchLogPath(ref.instanceId) });
+  worker.postMessage({ type:'launch', options:ref.options, offlineCache:ref.offlineCache || null, instanceId:ref.instanceId, name:ref.instance.name, logPath:launchLogPath(ref.instanceId) });
 }
 
 ipcMain.handle('stop-game', async (_event, id) => {
@@ -1716,13 +1902,22 @@ async function applyAutomaticInstanceVersionUpdates(id, config, rawInstance) {
 
 ipcMain.handle('launch-game', async (_event, id) => {
   if (activeLauncher) return { ok:false, error:'이미 Minecraft를 실행하고 있습니다.' };
-  let summary = accountSummary(currentAccount);
-  if (!summary || !currentAccount) summary = await loadSavedAccount();
-  if (!summary || !currentAccount) return { ok:false, needLogin:true, error:'먼저 Microsoft 계정으로 로그인해 주세요.' };
-  if (!(await ensureFreshAccountForLaunch())) return { ok:false, needLogin:true, error:'Microsoft 로그인 정보가 만료되었습니다. 다시 로그인해 주세요.' };
 
   let { config, instance: rawInstance } = await getInstance(id);
   if (!rawInstance) return { ok:false, error:'실행할 인스턴스를 찾을 수 없습니다.' };
+
+  let summary = accountSummary(currentAccount);
+  if (!summary || !currentAccount) summary = await loadSavedAccount();
+  if (!summary || !currentAccount) {
+    return { ok:false, needLogin:true, error:'Minecraft Java Edition은 Microsoft 계정 확인이 필요합니다. 이 PC에서 처음 한 번 로그인한 뒤에는 Vanilla 인스턴스를 인증 서버 연결 없이 다시 실행할 수 있습니다.' };
+  }
+  const authState = await ensureFreshAccountForLaunch();
+  const offlineFallback = !authState.ok && authState.cached;
+  if (!authState.ok && !offlineFallback) return { ok:false, needLogin:true, error:'Microsoft 로그인 정보를 확인할 수 없습니다. 다시 로그인해 주세요.' };
+  if (offlineFallback && rawInstance.loader !== 'vanilla') {
+    return { ok:false, error:'오프라인 실행은 Vanilla 인스턴스에서만 지원합니다. Fabric / Forge / NeoForge / Quilt는 온라인 계정 확인 후 실행해 주세요.' };
+  }
+
   const automatic = await applyAutomaticInstanceVersionUpdates(id, config, rawInstance);
   config = automatic.config;
   const instance = automatic.instance;
@@ -1734,6 +1929,11 @@ ipcMain.handle('launch-game', async (_event, id) => {
     await appendLauncherLog(id, `INGAME HUD WARNING ${error.message || error}`).catch(() => {});
   }
   const settings = instance.settings;
+  let offlineFiles = null;
+  if (offlineFallback) {
+    try { offlineFiles = await resolveCachedVanillaOfflineFiles(id, instance, settings); }
+    catch (error) { return { ok:false, error:error.message }; }
+  }
 
   if (settings.javaPath) {
     try {
@@ -1749,6 +1949,8 @@ ipcMain.handle('launch-game', async (_event, id) => {
   const options = {
     path: root,
     authenticator: currentAccount,
+    // 인증 서버 연결에 실패했을 때도 마지막으로 정상 인증된 계정으로 Vanilla 싱글플레이를 시작할 수 있게 합니다.
+    bypassOffline: offlineFallback,
     version: instance.version || 'latest_release',
     detached: false,
     // 병렬 수를 지나치게 높이면 일부 네트워크/디스크에서 마지막 파일 단계가 멎을 수 있어 공식 기본값 수준으로 안정화한다.
@@ -1762,7 +1964,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
       build: loaderEnabled ? (instance.loaderVersion || 'latest') : 'latest',
       path: loaderEnabled ? `loader/${instance.loader}` : './loader'
     },
-    java: { path: settings.javaPath || null, type:'jre' },
+    java: { path: offlineFiles?.javaPath || settings.javaPath || null, type:'jre' },
     screen: { width:settings.screen.width, height:settings.screen.height, fullscreen:!!settings.screen.fullscreen },
     JVM_ARGS: [`-Deasycraft.instance=${safeId(id)}`, ...splitArgsLines(settings.jvmArgs)],
     GAME_ARGS: splitArgsLines(settings.gameArgs),
@@ -1773,6 +1975,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
     instanceId:id,
     instance,
     options,
+    offlineCache: offlineFiles ? { enabled:true, root:offlineFiles.root, version:offlineFiles.version, versionJsonPath:offlineFiles.versionJsonPath, assetIndexPath:offlineFiles.assetIndexPath } : null,
     worker:null,
     state:'preparing',
     cancelRequested:false,
@@ -1784,10 +1987,10 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.12 ${instance.name} mc=${instance.version} loader=${instance.loader} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.1 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
-  return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes };
+  return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };
 });
 
 // ---------- EasyCraft 자체 자동 업데이트 ----------

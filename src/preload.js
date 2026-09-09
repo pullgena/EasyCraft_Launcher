@@ -6,6 +6,11 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   fetchLoaderVersions: (loader, minecraftVersion) => ipcRenderer.invoke('fetch-loader-versions', loader, minecraftVersion),
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
   loginMicrosoft: () => ipcRenderer.invoke('login-microsoft'),
+  startDeviceLogin: () => ipcRenderer.invoke('device-login-start'),
+  completeDeviceLogin: (sessionId, completedUrl) => ipcRenderer.invoke('device-login-complete', sessionId, completedUrl),
+  cancelDeviceLogin: sessionId => ipcRenderer.invoke('device-login-cancel', sessionId),
+  openDeviceLoginUrl: url => ipcRenderer.invoke('device-login-open-url', url),
+  copyDeviceLoginLink: url => ipcRenderer.invoke('device-login-copy-link', url),
   logout: () => ipcRenderer.invoke('logout'),
 
   createInstance: data => ipcRenderer.invoke('create-instance', data),

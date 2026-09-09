@@ -49,6 +49,38 @@ function finishWithError(err) {
   setTimeout(() => process.exit(1), 30).unref?.();
 }
 
+function installOfflineMetadataBridge(cache) {
+  if (!cache?.enabled) return;
+  const originalFetch = global.fetch;
+  if (typeof originalFetch !== 'function') return;
+  let versionJson = null;
+  let assetIndex = null;
+  try { versionJson = JSON.parse(fs.readFileSync(cache.versionJsonPath, 'utf8')); } catch {}
+  if (cache.assetIndexPath) {
+    try { assetIndex = JSON.parse(fs.readFileSync(cache.assetIndexPath, 'utf8')); } catch {}
+  }
+  if (!versionJson) throw new Error('오프라인 Minecraft 버전 정보를 읽지 못했습니다.');
+  const localVersionUrl = `easycraft-local://version/${encodeURIComponent(cache.version)}`;
+  const localAssetUrl = versionJson?.assetIndex?.url || null;
+  const makeJsonResponse = value => new Response(JSON.stringify(value), { status:200, headers:{ 'content-type':'application/json' } });
+  global.fetch = async (input, init) => {
+    const url = typeof input === 'string' ? input : String(input?.url || input || '');
+    if (/version_manifest_v2\.json/i.test(url)) {
+      return makeJsonResponse({
+        latest: { release: cache.version, snapshot: cache.version },
+        versions: [{ id:cache.version, type:versionJson.type || 'release', url:localVersionUrl, time:'', releaseTime:'' }]
+      });
+    }
+    if (url === localVersionUrl) return makeJsonResponse(versionJson);
+    if (localAssetUrl && url === localAssetUrl) {
+      if (!assetIndex) throw new Error('오프라인 에셋 인덱스를 읽을 수 없습니다.');
+      return makeJsonResponse(assetIndex);
+    }
+    return originalFetch(input, init);
+  };
+  writeLog(`OFFLINE METADATA CACHE enabled version=${cache.version}`);
+}
+
 function sendProgress(progress, total, element) {
   let pct = Number(progress);
   const size = Number(total);
@@ -79,6 +111,8 @@ function startLaunch(payload) {
   logPath = payload.logPath || null;
   instanceId = payload.instanceId || null;
 
+  try { installOfflineMetadataBridge(payload?.offlineCache); }
+  catch (error) { return finishWithError(error); }
   launcher = new Launch();
   let runningSent = false;
 

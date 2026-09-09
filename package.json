@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.12",
-  "description": "EasyCraft Launcher 0.4.12 - live logs, automatic log cleanup, infinite Modrinth discovery and paged search",
+  "version": "0.4.13-beta.2",
+  "description": "EasyCraft Launcher 0.4.13-beta.2 - other-device Microsoft login handoff beta, licensed Vanilla offline fallback, live logs and Modrinth content",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
