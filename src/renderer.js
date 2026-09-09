@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.13-beta.4',
+  appVersion: '0.4.13-beta.5',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -29,9 +29,7 @@ const state = {
   searchLoading: false,
   logLines: [],
   logInstanceId: null,
-  deviceLoginSessionId: null,
-  deviceLoginUrl: 'https://microsoft.com/link',
-  deviceLoginCode: ''
+  authRelayBusy: false
 };
 
 function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -188,48 +186,49 @@ async function loginOnThisPc() {
   const r = await api.loginMicrosoft();
   if (!r.ok) toast(r.error || '로그인하지 못했습니다.', true); else { state.account=r.account; renderAccount(); }
 }
-function setDeviceLoginStatus(text, kind='waiting') {
-  $('#deviceLoginStatus').textContent = text || '';
-  const row = $('.device-login-state');
+function setRelayLoginStatus(text, kind='waiting') {
+  $('#relayLoginStatus').textContent = text || '';
+  const row = $('#relayLoginStatus')?.closest('.device-login-state');
   row?.classList.toggle('complete', kind === 'complete');
   row?.classList.toggle('error', kind === 'error');
+  $('#relayLoginSpinner')?.classList.toggle('hidden', kind !== 'loading');
+}
+function formatRelayCodeInput(value) {
+  const clean = String(value || '').toUpperCase().replace(/[^A-Z2-9]/g,'').replace(/^EC/,'').slice(0,12);
+  const groups = clean.match(/.{1,4}/g) || [];
+  return clean ? `EC-${groups.join('-')}` : '';
 }
 async function startOtherDeviceLogin() {
   closeModal('loginChoiceModal');
-  state.deviceLoginSessionId = null;
-  state.deviceLoginCode = '';
-  state.deviceLoginUrl = 'https://microsoft.com/link';
-  $('#deviceLoginCode').textContent = '코드 생성 중…';
-  $('#deviceLoginCopyBtn').disabled = true;
-  $('#deviceLoginOpenBtn').disabled = true;
-  setDeviceLoginStatus('Microsoft 인증 코드를 준비하고 있습니다…');
-  openModal('deviceLoginModal');
-  const started = await api.startDeviceLogin();
-  if (!started?.ok) {
-    setDeviceLoginStatus(started?.error || '인증 코드를 만들지 못했습니다.', 'error');
-    return;
-  }
-  state.deviceLoginSessionId = started.sessionId;
-  state.deviceLoginCode = started.userCode || '';
-  state.deviceLoginUrl = started.verificationUriComplete || started.verificationUri || 'https://microsoft.com/link';
-  $('#deviceLoginCode').textContent = state.deviceLoginCode || '코드 없음';
-  $('#deviceLoginUrlText').textContent = started.verificationUri || 'https://microsoft.com/link';
-  $('#deviceLoginCopyBtn').disabled = !state.deviceLoginCode;
-  $('#deviceLoginOpenBtn').disabled = !state.deviceLoginUrl;
-  setDeviceLoginStatus('휴대폰에서 Microsoft 인증 페이지를 열고 위 코드를 입력해 주세요. 인증이 끝나면 EasyCraft가 자동으로 로그인됩니다.');
+  const url = state.config.launcherSettings?.authRelayUrl || '';
+  $('#relayLoginUrlText').textContent = url || '설정에서 주소를 지정하세요';
+  $('#relayCodeInput').value = '';
+  setRelayLoginStatus(url ? '인증 사이트에서 Microsoft 로그인 후 발급된 코드를 입력해 주세요.' : '먼저 설정에서 EasyCraft 인증 사이트 주소를 저장해 주세요.', url ? 'waiting' : 'error');
+  openModal('relayLoginModal');
+  setTimeout(()=>$('#relayCodeInput').focus(),80);
 }
-async function cancelDeviceLogin() {
-  const sessionId = state.deviceLoginSessionId;
-  state.deviceLoginSessionId = null;
-  if (sessionId) await api.cancelDeviceLogin(sessionId).catch?.(()=>{});
-  closeModal('deviceLoginModal');
+async function openRelaySite() {
+  const r = await api.openAuthRelaySite();
+  if (!r?.ok) return setRelayLoginStatus(r?.error || '인증 사이트를 열지 못했습니다.','error');
+  setRelayLoginStatus('사이트에서 Microsoft 로그인을 완료한 뒤 표시되는 코드를 입력해 주세요.');
 }
-async function logout() {
-  if (!state.account) return;
-  if (!(await askConfirm(`${state.account.name} 계정에서 로그아웃할까요?`, '로그아웃'))) return;
-  const r=await api.logout(); if (r.ok) { state.account=null; renderAccount(); toast('로그아웃했습니다.'); }
+async function redeemRelayCode() {
+  if (state.authRelayBusy) return;
+  const code = $('#relayCodeInput').value.trim();
+  if (!code) return setRelayLoginStatus('사이트에서 발급된 코드를 입력해 주세요.','error');
+  state.authRelayBusy = true;
+  $('#relayLoginConfirmBtn').disabled = true;
+  setRelayLoginStatus('코드를 확인하고 Minecraft 계정을 연결하고 있습니다…','loading');
+  const r = await api.redeemAuthRelayCode(code);
+  state.authRelayBusy = false;
+  $('#relayLoginConfirmBtn').disabled = false;
+  if (!r?.ok) return setRelayLoginStatus(r?.error || '코드 로그인에 실패했습니다.','error');
+  state.account = r.account;
+  renderAccount();
+  setRelayLoginStatus(`${r.account?.name || 'Microsoft 계정'} 로그인 완료`,'complete');
+  toast(`${r.account?.name || 'Microsoft 계정'} 로그인 완료`);
+  setTimeout(()=>closeModal('relayLoginModal'),700);
 }
-
 async function launchOrStop() {
   const inst=currentInstance(); if (!inst) return toast('인스턴스를 먼저 만들어 주세요.', true);
   if (['preparing','running','stopping'].includes(state.launchState)) {
@@ -603,7 +602,7 @@ async function reloadLogs(){
 function updateSettingsText(u=state.update){ const version=state.appVersion; const title=$('#updateStatusTitle'), text=$('#updateStatusText'), action=$('#settingsUpdateActionBtn'), notes=$('#settingsReleaseNotesBtn'), progress=$('#updateProgress'), check=$('#manualUpdateCheckBtn'); progress.style.width=`${u.percent||0}%`; action.classList.add('hidden'); action.dataset.action=''; action.disabled=false; check.textContent='업데이트 확인'; notes.classList.toggle('hidden', !['available','downloading','downloaded'].includes(u.state)); if(u.state==='latest'){title.textContent='최신 버전입니다';text.textContent=`EasyCraft v${version}을 사용하고 있습니다.`;}else if(u.state==='available'){title.textContent=`v${u.availableVersion} 업데이트 가능`;text.textContent='새 버전을 다운로드하기 전에 GitHub에서 업데이트 내역을 확인할 수 있습니다.';action.textContent='업데이트';action.dataset.action='download';action.classList.remove('hidden');}else if(u.state==='downloading'){title.textContent=`업데이트 다운로드 중 · ${u.percent||0}%`;text.textContent='GitHub Release에서 이번 업데이트의 변경사항을 확인할 수 있습니다.';}else if(u.state==='downloaded'){title.textContent=`v${u.availableVersion} 준비 완료`;text.textContent='업데이트 내역을 확인하거나 재시작해서 새 버전을 적용하세요.';action.textContent='재시작하여 업데이트';action.dataset.action='install';action.classList.remove('hidden');}else if(u.state==='installing'){title.textContent=`v${u.availableVersion||''} 업데이트 적용 중`;text.textContent='작은 업데이트 창에서 설치 진행 상태를 확인할 수 있습니다.';}else if(u.state==='checking'||u.state==='idle'){title.textContent='업데이트 확인 중';text.textContent='최신 버전을 확인하고 있습니다.';}else if(u.state==='dev'){title.textContent='개발 모드';text.textContent='설치된 EXE에서 업데이트를 확인할 수 있습니다.';}else if(u.state==='error'){title.textContent='업데이트 확인 오류';text.textContent=u.error||'업데이트 서버에 연결하지 못했습니다.';}else{title.textContent='업데이트 상태';text.textContent='업데이트 확인 버튼을 눌러 확인할 수 있습니다.';} }
 function renderStartupUpdate(u=state.update){ const gate=$('#startupGate'), checking=$('#gateChecking'), avail=$('#gateAvailable'); if(state.updatePromptDismissed){gate.classList.add('hidden');return;} if(u.state==='checking'||u.state==='idle'){gate.classList.remove('hidden');checking.classList.remove('hidden');avail.classList.add('hidden');return;} if(u.state==='available'||u.state==='downloading'||u.state==='downloaded'){gate.classList.remove('hidden');checking.classList.add('hidden');avail.classList.remove('hidden');$('#gateUpdateTitle').textContent=u.state==='downloaded'?`EasyCraft v${u.availableVersion} 준비 완료`:`EasyCraft v${u.availableVersion} 업데이트`;$('#gateUpdateDescription').textContent=u.state==='downloaded'?'재시작하면 새 버전을 바로 사용할 수 있습니다.':u.state==='downloading'?`업데이트를 다운로드하고 있습니다. ${u.percent||0}%`:`현재 v${state.appVersion} → 새 버전 v${u.availableVersion}. 지금 업데이트하시겠어요?`;$('#gateProgressWrap').classList.toggle('hidden',u.state==='available');$('#gateProgress').style.width=`${u.percent||0}%`;$('#gateReleaseNotesBtn').classList.toggle('hidden', !u.availableVersion);$('#updateLaterBtn').disabled=u.state==='downloading';$('#updateNowBtn').disabled=u.state==='downloading';$('#updateNowBtn').textContent=u.state==='downloaded'?'재시작하여 업데이트':u.state==='downloading'?'다운로드 중…':'업데이트';return;} gate.classList.add('hidden');}
 function applyUpdateState(u={}){state.update={...state.update,...u};updateSettingsText(state.update);renderStartupUpdate(state.update);}
-function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;const c=$('#microsoftClientIdInput');if(c)c.value=state.config.launcherSettings?.microsoftClientId||'';}
+function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;const c=$('#authRelayUrlInput');if(c)c.value=state.config.launcherSettings?.authRelayUrl||'';}
 
 function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classList.contains('active')){
   const heading=$('#pageHeading');if(!heading)return;
@@ -629,14 +628,9 @@ $('#autoDeleteLogsToggle').addEventListener('change',async e=>{
   if(!r?.ok){e.currentTarget.checked=!e.currentTarget.checked;return toast(r?.error||'로그 설정을 저장하지 못했습니다.',true);}
   state.config=r.config;toast(e.currentTarget.checked?'로그 자동 삭제를 켰습니다.':'로그 자동 삭제를 껐습니다.');
 });
-$('#saveMicrosoftClientIdBtn').addEventListener('click',async()=>{
-  const value=$('#microsoftClientIdInput').value.trim();
-  const r=await api.updateLauncherSettings({microsoftClientId:value});
-  if(!r?.ok)return toast(r?.error||'Microsoft Client ID를 저장하지 못했습니다.',true);
-  state.config=r.config;toast(value?'Microsoft Client ID를 저장했습니다.':'Microsoft Client ID를 비웠습니다.');
-});
+$('#saveAuthRelayUrlBtn').addEventListener('click',async()=>{const value=$('#authRelayUrlInput').value.trim();const r=await api.updateLauncherSettings({authRelayUrl:value});if(!r?.ok)return toast(r?.error||'인증 사이트 주소를 저장하지 못했습니다.',true);state.config=r.config;if(!value)return toast('인증 사이트 주소를 비웠습니다.');const h=await api.checkAuthRelay();toast(h?.ok?'인증 사이트 주소를 저장했고 서버 연결도 확인했습니다.':`주소는 저장했지만 서버 연결 확인에 실패했습니다: ${h?.error||'연결 실패'}`,!h?.ok);});
 $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.dataset.close)));
-$$('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target!==m)return;if(['dependencyModal','confirmModal','deviceLoginModal'].includes(m.id))return;closeModal(m.id);}));
+$$('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target!==m)return;if(['dependencyModal','confirmModal'].includes(m.id))return;closeModal(m.id);}));
 $('#newInstanceBtn').addEventListener('click',openCreateModal);
 $('#heroSettingsBtn').addEventListener('click',()=>openInstanceModal());
 $('#settingsInstanceBtn').addEventListener('click',()=>openInstanceModal());
@@ -655,9 +649,10 @@ $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editin
 $('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
 $('#loginOnThisPcBtn').addEventListener('click',loginOnThisPc);
 $('#loginOnOtherDeviceBtn').addEventListener('click',startOtherDeviceLogin);
-$('#deviceLoginCancelBtn').addEventListener('click',cancelDeviceLogin);
-$('#deviceLoginCopyBtn').addEventListener('click',async()=>{const r=await api.copyDeviceLoginCode(state.deviceLoginCode);toast(r?.ok?'인증 코드를 복사했습니다.':(r?.error||'코드를 복사하지 못했습니다.'),!r?.ok);});
-$('#deviceLoginOpenBtn').addEventListener('click',async()=>{const r=await api.openDeviceLoginUrl(state.deviceLoginUrl);if(!r?.ok)toast(r?.error||'로그인 페이지를 열지 못했습니다.',true);});
+$('#relayOpenSiteBtn').addEventListener('click',openRelaySite);
+$('#relayLoginConfirmBtn').addEventListener('click',redeemRelayCode);
+$('#relayCodeInput').addEventListener('input',e=>{e.target.value=formatRelayCodeInput(e.target.value);});
+$('#relayCodeInput').addEventListener('keydown',e=>{if(e.key==='Enter')redeemRelayCode();});
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
 async function openSelectedInstanceFolder(){
   const i=currentInstance();
@@ -702,23 +697,10 @@ api.onLaunchClosed(()=>{state.launchState='idle';renderPlayButton();hideLaunchPo
 api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onGameLog(appendLiveLog);
 api.onLauncherUpdateState(applyUpdateState);
-api.onDeviceLoginState?.(info=>{
-  if(!info||!state.deviceLoginSessionId||info.sessionId!==state.deviceLoginSessionId)return;
-  if(info.state==='verifying'){setDeviceLoginStatus(info.text||'Minecraft 계정과 소유권을 확인하고 있습니다…');return;}
-  if(info.state==='complete'){
-    state.deviceLoginSessionId=null;
-    if(info.account)state.account=info.account;
-    renderAccount();
-    setDeviceLoginStatus(info.text||'로그인 완료','complete');
-    toast(`${info.account?.name||'Microsoft 계정'} 로그인 완료`);
-    setTimeout(()=>closeModal('deviceLoginModal'),800);
-    return;
-  }
-  if(info.state==='error'){state.deviceLoginSessionId=null;setDeviceLoginStatus(info.error||'Microsoft 코드 로그인에 실패했습니다.','error');}
-});
+
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.4';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.5';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
   $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
   renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
   const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';

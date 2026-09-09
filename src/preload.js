@@ -6,10 +6,9 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   fetchLoaderVersions: (loader, minecraftVersion) => ipcRenderer.invoke('fetch-loader-versions', loader, minecraftVersion),
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
   loginMicrosoft: () => ipcRenderer.invoke('login-microsoft'),
-  startDeviceLogin: () => ipcRenderer.invoke('device-login-start'),
-  cancelDeviceLogin: sessionId => ipcRenderer.invoke('device-login-cancel', sessionId),
-  openDeviceLoginUrl: url => ipcRenderer.invoke('device-login-open-url', url),
-  copyDeviceLoginCode: code => ipcRenderer.invoke('device-login-copy-code', code),
+  openAuthRelaySite: () => ipcRenderer.invoke('auth-relay-open-site'),
+  redeemAuthRelayCode: code => ipcRenderer.invoke('auth-relay-redeem', code),
+  checkAuthRelay: () => ipcRenderer.invoke('auth-relay-health'),
   logout: () => ipcRenderer.invoke('logout'),
 
   createInstance: data => ipcRenderer.invoke('create-instance', data),
@@ -63,6 +62,5 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   onLaunchClosed: callback => ipcRenderer.on('launch-closed', (_e, value) => callback(value)),
   onGameLog: callback => ipcRenderer.on('game-log', (_e, value) => callback(value)),
   onContentProgress: callback => ipcRenderer.on('content-progress', (_e, value) => callback(value)),
-  onLauncherUpdateState: callback => ipcRenderer.on('launcher-update-state', (_e, value) => callback(value)),
-  onDeviceLoginState: callback => ipcRenderer.on('device-login-state', (_e, value) => callback(value))
+  onLauncherUpdateState: callback => ipcRenderer.on('launcher-update-state', (_e, value) => callback(value))
 });

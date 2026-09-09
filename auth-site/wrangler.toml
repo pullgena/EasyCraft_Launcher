@@ -1,0 +1,11 @@
+name = "easycraft-auth"
+main = "src/worker.js"
+compatibility_date = "2026-09-09"
+
+[[durable_objects.bindings]]
+name = "AUTH_SESSIONS"
+class_name = "AuthSessionStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AuthSessionStore"]
