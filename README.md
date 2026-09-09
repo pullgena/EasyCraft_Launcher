@@ -5,7 +5,7 @@
 ## Beta 8.1 변경점
 
 - 사용자 설정 화면에서 **Microsoft Client ID 항목 제거**
-- 학교 PC 사용자는 Client ID를 입력할 필요 없음
+- 사용자는 Client ID를 입력할 필요 없음
 - 개발자가 빌드 시 `EASYCRAFT_MS_CLIENT_ID`를 한 번 주입
 - Client Secret은 런처에 저장하거나 포함하지 않음
 - 기존 인증 사이트/EC 코드 방식은 사용하지 않음
