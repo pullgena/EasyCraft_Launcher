@@ -1,6 +1,6 @@
-# EasyCraft 인증 사이트 배포 (Beta 5)
+# EasyCraft 인증 사이트 배포 (Beta 6)
 
-Beta 5는 **웹사이트에서 Microsoft 로그인 → 사이트가 일회용 `EC-XXXX-XXXX-XXXX` 코드 발급 → EasyCraft Launcher에 코드 입력** 방식입니다.
+Beta 6는 **웹사이트에서 Microsoft 로그인 → 사이트가 일회용 `EC-XXXX-XXXX-XXXX` 코드 발급 → EasyCraft Launcher에 코드 입력** 방식입니다.
 
 먼저 학교 PC의 브라우저에서 사이트 로그인을 시험하고, 학교에서 Microsoft 로그인이 막히면 같은 사이트를 휴대폰에서 열어 코드를 발급받으면 됩니다.
 
@@ -59,7 +59,7 @@ https://easycraft-auth.<계정>.workers.dev
 
 ## 4. 로그인 테스트
 
-1. EasyCraft → 로그인 → **EasyCraft 코드 로그인 · BETA 5**.
+1. EasyCraft → 로그인 → **EasyCraft 코드 로그인 · BETA 6**.
 2. **인증 사이트 열기**.
 3. 먼저 학교 PC에서 Microsoft 로그인을 시도합니다.
 4. 성공하면 사이트가 `EC-XXXX-XXXX-XXXX` 코드를 표시합니다.
@@ -70,4 +70,4 @@ https://easycraft-auth.<계정>.workers.dev
 
 ## 중요: Minecraft/Xbox 앱 등록 제한
 
-Microsoft 로그인 자체가 성공해도 새 Entra 앱이 Xbox/Minecraft Services에서 허용되지 않으면 Minecraft 계정 확인 단계에서 실패할 수 있습니다. 이 경우는 학교 네트워크가 아니라 Microsoft의 서드파티 Minecraft 앱 등록 권한 문제입니다. Beta 5 결과를 보고 다른 인증 방식을 이어서 시험할 수 있습니다.
+Microsoft 로그인 자체가 성공해도 새 Entra 앱이 Xbox/Minecraft Services에서 허용되지 않으면 Minecraft 계정 확인 단계에서 실패할 수 있습니다. 이 경우는 학교 네트워크가 아니라 Microsoft의 서드파티 Minecraft 앱 등록 권한 문제입니다. Beta 6 결과를 보고 다른 인증 방식을 이어서 시험할 수 있습니다.

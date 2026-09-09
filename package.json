@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.13-beta.5",
-  "description": "EasyCraft Launcher 0.4.13-beta.5 - EasyCraft relay-code Microsoft login beta, Vanilla offline fallback, live logs and Modrinth content",
+  "version": "0.4.13-beta.6",
+  "description": "EasyCraft Launcher 0.4.13-beta.6 - EasyCraft relay-code Microsoft login beta, Vanilla offline fallback, live logs and Modrinth content",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
@@ -45,7 +45,7 @@
       {
         "provider": "github",
         "owner": "pullgena",
-        "repo": "launch-2.0",
+        "repo": "EasyCraft_Launcher",
         "releaseType": "release"
       }
     ],
@@ -72,6 +72,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/pullgena/launch-2.0.git"
+    "url": "https://github.com/pullgena/EasyCraft_Launcher.git"
   }
 }

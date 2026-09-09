@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.13-beta.5',
+  appVersion: '0.4.13-beta.6',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -601,6 +601,18 @@ async function reloadLogs(){
 
 function updateSettingsText(u=state.update){ const version=state.appVersion; const title=$('#updateStatusTitle'), text=$('#updateStatusText'), action=$('#settingsUpdateActionBtn'), notes=$('#settingsReleaseNotesBtn'), progress=$('#updateProgress'), check=$('#manualUpdateCheckBtn'); progress.style.width=`${u.percent||0}%`; action.classList.add('hidden'); action.dataset.action=''; action.disabled=false; check.textContent='업데이트 확인'; notes.classList.toggle('hidden', !['available','downloading','downloaded'].includes(u.state)); if(u.state==='latest'){title.textContent='최신 버전입니다';text.textContent=`EasyCraft v${version}을 사용하고 있습니다.`;}else if(u.state==='available'){title.textContent=`v${u.availableVersion} 업데이트 가능`;text.textContent='새 버전을 다운로드하기 전에 GitHub에서 업데이트 내역을 확인할 수 있습니다.';action.textContent='업데이트';action.dataset.action='download';action.classList.remove('hidden');}else if(u.state==='downloading'){title.textContent=`업데이트 다운로드 중 · ${u.percent||0}%`;text.textContent='GitHub Release에서 이번 업데이트의 변경사항을 확인할 수 있습니다.';}else if(u.state==='downloaded'){title.textContent=`v${u.availableVersion} 준비 완료`;text.textContent='업데이트 내역을 확인하거나 재시작해서 새 버전을 적용하세요.';action.textContent='재시작하여 업데이트';action.dataset.action='install';action.classList.remove('hidden');}else if(u.state==='installing'){title.textContent=`v${u.availableVersion||''} 업데이트 적용 중`;text.textContent='작은 업데이트 창에서 설치 진행 상태를 확인할 수 있습니다.';}else if(u.state==='checking'||u.state==='idle'){title.textContent='업데이트 확인 중';text.textContent='최신 버전을 확인하고 있습니다.';}else if(u.state==='dev'){title.textContent='개발 모드';text.textContent='설치된 EXE에서 업데이트를 확인할 수 있습니다.';}else if(u.state==='error'){title.textContent='업데이트 확인 오류';text.textContent=u.error||'업데이트 서버에 연결하지 못했습니다.';}else{title.textContent='업데이트 상태';text.textContent='업데이트 확인 버튼을 눌러 확인할 수 있습니다.';} }
 function renderStartupUpdate(u=state.update){ const gate=$('#startupGate'), checking=$('#gateChecking'), avail=$('#gateAvailable'); if(state.updatePromptDismissed){gate.classList.add('hidden');return;} if(u.state==='checking'||u.state==='idle'){gate.classList.remove('hidden');checking.classList.remove('hidden');avail.classList.add('hidden');return;} if(u.state==='available'||u.state==='downloading'||u.state==='downloaded'){gate.classList.remove('hidden');checking.classList.add('hidden');avail.classList.remove('hidden');$('#gateUpdateTitle').textContent=u.state==='downloaded'?`EasyCraft v${u.availableVersion} 준비 완료`:`EasyCraft v${u.availableVersion} 업데이트`;$('#gateUpdateDescription').textContent=u.state==='downloaded'?'재시작하면 새 버전을 바로 사용할 수 있습니다.':u.state==='downloading'?`업데이트를 다운로드하고 있습니다. ${u.percent||0}%`:`현재 v${state.appVersion} → 새 버전 v${u.availableVersion}. 지금 업데이트하시겠어요?`;$('#gateProgressWrap').classList.toggle('hidden',u.state==='available');$('#gateProgress').style.width=`${u.percent||0}%`;$('#gateReleaseNotesBtn').classList.toggle('hidden', !u.availableVersion);$('#updateLaterBtn').disabled=u.state==='downloading';$('#updateNowBtn').disabled=u.state==='downloading';$('#updateNowBtn').textContent=u.state==='downloaded'?'재시작하여 업데이트':u.state==='downloading'?'다운로드 중…':'업데이트';return;} gate.classList.add('hidden');}
+
+const STARTUP_GATE_FAILSAFE_MS = 8000;
+function dismissStuckStartupGate(){
+  const gate=$('#startupGate');
+  if(!gate || gate.classList.contains('hidden'))return;
+  if(!['idle','checking'].includes(state.update.state))return;
+  state.updatePromptDismissed=true;
+  gate.classList.add('hidden');
+  // 업데이트 검사는 백그라운드에서 끝날 수 있지만 런처 사용을 더 이상 막지 않습니다.
+}
+// 어떤 IPC/네트워크 await보다 먼저 타이머를 걸어 Minecraft 버전 API까지 멈춘 경우도 복구합니다.
+const startupGateFailsafe=setTimeout(dismissStuckStartupGate,STARTUP_GATE_FAILSAFE_MS);
 function applyUpdateState(u={}){state.update={...state.update,...u};updateSettingsText(state.update);renderStartupUpdate(state.update);}
 function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;const c=$('#authRelayUrlInput');if(c)c.value=state.config.launcherSettings?.authRelayUrl||'';}
 
@@ -700,11 +712,20 @@ api.onLauncherUpdateState(applyUpdateState);
 
 
 (async function init(){
-  const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.5';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
-  $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
-  renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
-  const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';
-  await refreshCapabilities();renderAll();
-  // 네트워크/업데이트 서비스가 응답하지 않아도 런처 자체는 열 수 있게 합니다.
-  setTimeout(()=>{if(!$('#startupGate').classList.contains('hidden') && ['idle','checking'].includes(state.update.state)){state.updatePromptDismissed=true;$('#startupGate').classList.add('hidden');}},9000);
+  try {
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.6';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
+    renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
+
+    // Minecraft 버전 목록은 네트워크 작업입니다. 이 작업이 느려도 시작 게이트 타이머는 이미 동작 중입니다.
+    const vr=await api.fetchVersions();state.versions=vr.versions||[];state.latest=vr.latest||'latest_release';
+    await refreshCapabilities();renderAll();
+  } catch(error) {
+    dismissStuckStartupGate();
+    console.error('EasyCraft 초기화 오류',error);
+    toast(`초기화 중 일부 정보를 불러오지 못했습니다: ${error?.message||error}`,true);
+  } finally {
+    // 정상적으로 업데이트 결과를 받은 경우 타이머는 더 이상 필요 없습니다.
+    if(!['idle','checking'].includes(state.update.state))clearTimeout(startupGateFailsafe);
+  }
 })();

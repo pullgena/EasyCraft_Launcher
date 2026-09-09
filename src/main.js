@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.13-beta.5 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.13-beta.6 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -216,15 +216,48 @@ async function createWindow() {
 app.whenReady().then(async () => {
   await ensureBase();
   await cleanupOldLogs();
+  // 업데이트 상태를 창보다 먼저 준비해 Renderer가 초기 'idle' 상태에 갇히지 않게 합니다.
+  // 업데이트 서버 장애와 관계없이 창 생성은 계속 진행됩니다.
+  initAutoUpdater();
   await createWindow();
   loadSavedAccount().then(summary => send('account-changed', summary));
-  initAutoUpdater();
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 
+const DEFAULT_NETWORK_TIMEOUT_MS = 12000;
+
+async function fetchWithTimeout(url, opts = {}, timeoutMs = DEFAULT_NETWORK_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const parentSignal = opts.signal || null;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  timer.unref?.();
+
+  let onParentAbort = null;
+  if (parentSignal) {
+    if (parentSignal.aborted) controller.abort();
+    else {
+      onParentAbort = () => controller.abort();
+      parentSignal.addEventListener('abort', onParentAbort, { once: true });
+    }
+  }
+
+  try {
+    return await fetch(url, { ...opts, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new Error(`네트워크 응답 시간 초과 (${Math.round(timeoutMs / 1000)}초)`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (parentSignal && onParentAbort) parentSignal.removeEventListener('abort', onParentAbort);
+  }
+}
 async function fetchJson(url, opts = {}) {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     ...opts,
     headers: { 'User-Agent': APP_UA, ...(opts.headers || {}) }
   });
@@ -236,7 +269,7 @@ async function fetchJson(url, opts = {}) {
   return res.json();
 }
 async function fetchText(url, opts = {}) {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     ...opts,
     headers: { 'User-Agent': APP_UA, ...(opts.headers || {}) }
   });
@@ -245,6 +278,14 @@ async function fetchText(url, opts = {}) {
 }
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function promiseWithTimeout(promise, timeoutMs, message = '작업 응답 시간이 초과되었습니다.') {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 async function postForm(url, values) {
   const body = new URLSearchParams(values);
   const res = await fetch(url, {
@@ -1991,7 +2032,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.5 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.6 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };
@@ -2002,6 +2043,7 @@ let launcherUpdateState = { state: 'idle', currentVersion: app.getVersion(), ava
 let autoUpdaterInstance = null;
 let launcherUpdateTimer = null;
 let updateRepository = null;
+const LAUNCHER_UPDATE_CHECK_TIMEOUT_MS = 8000;
 
 function readBuildInfo() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')); }
@@ -2036,7 +2078,7 @@ async function githubUpdatePreflight(repository) {
     'Accept': 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28'
   };
-  const repoRes = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { headers });
+  const repoRes = await fetchWithTimeout(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, { headers }, 6000);
   if (!repoRes.ok) {
     if (repoRes.status === 404) throw new Error(`404: ${repository} repository is not publicly accessible`);
     throw new Error(`GitHub 저장소 확인 실패 (HTTP ${repoRes.status})`);
@@ -2044,7 +2086,7 @@ async function githubUpdatePreflight(repository) {
 
   // A published release is required for electron-updater. A missing release is
   // reported separately instead of exposing electron-updater's long raw 404.
-  const releaseRes = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/latest`, { headers });
+  const releaseRes = await fetchWithTimeout(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases/latest`, { headers }, 6000);
   if (!releaseRes.ok) {
     if (releaseRes.status === 404) throw new Error(`404: ${repository} has no published release`);
     throw new Error(`GitHub Release 확인 실패 (HTTP ${releaseRes.status})`);
@@ -2064,10 +2106,26 @@ async function checkForLauncherUpdate({ manual = false } = {}) {
   if (['checking', 'downloading', 'downloaded'].includes(launcherUpdateState.state)) return { ok: true, skipped: true };
   try {
     setLauncherUpdateState({ state: 'checking', percent: 0, error: null });
-    await autoUpdaterInstance.checkForUpdates();
+    const check = autoUpdaterInstance.checkForUpdates();
+    await promiseWithTimeout(
+      check,
+      LAUNCHER_UPDATE_CHECK_TIMEOUT_MS,
+      '업데이트 서버 응답 시간이 초과되었습니다.'
+    );
+    // electron-updater가 정상이라면 available/latest 이벤트가 먼저 상태를 바꿉니다.
+    // 드물게 Promise만 끝나고 이벤트가 오지 않는 경우에도 시작 화면을 붙잡지 않습니다.
+    if (launcherUpdateState.state === 'checking') {
+      setLauncherUpdateState({
+        state: 'error',
+        error: '업데이트 결과를 받지 못했습니다. EasyCraft는 계속 실행되며 설정에서 다시 확인할 수 있습니다.'
+      });
+    }
     return { ok: true };
   } catch (error) {
-    const message = friendlyUpdateError(error);
+    const timedOut = /업데이트 서버 응답 시간이 초과/i.test(String(error?.message || error || ''));
+    const message = timedOut
+      ? '업데이트 서버 응답이 늦어 확인을 건너뛰었습니다. EasyCraft는 계속 실행됩니다.'
+      : friendlyUpdateError(error);
     setLauncherUpdateState({ state: 'error', error: message });
     return { ok: false, error: message };
   }
