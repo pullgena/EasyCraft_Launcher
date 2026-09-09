@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.13-beta.6 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.13-beta.7 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -288,7 +288,7 @@ function promiseWithTimeout(promise, timeoutMs, message = '작업 응답 시간�
 }
 async function postForm(url, values) {
   const body = new URLSearchParams(values);
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -296,7 +296,7 @@ async function postForm(url, values) {
       'User-Agent': APP_UA
     },
     body
-  });
+  }, 15000);
   let data = {};
   try { data = await res.json(); } catch { data = { error: `HTTP_${res.status}` }; }
   return { ok: res.ok, status: res.status, data };
@@ -351,11 +351,11 @@ function normalizeRelayCode(value) {
   return code;
 }
 async function relayRequest(baseUrl, endpoint, body) {
-  const response = await fetch(`${baseUrl}${endpoint}`, {
+  const response = await fetchWithTimeout(`${baseUrl}${endpoint}`, {
     method:'POST',
     headers:{'Content-Type':'application/json','Accept':'application/json','User-Agent':APP_UA},
     body:JSON.stringify(body || {})
-  });
+  }, 15000);
   let data = {};
   try { data = await response.json(); } catch {}
   if (!response.ok || data?.ok === false) throw new Error(data?.error || `EasyCraft 인증 서버 오류 (HTTP ${response.status})`);
@@ -769,8 +769,9 @@ ipcMain.handle('login-microsoft', async () => {
     send('status', { text: `${summary?.name || '계정'} 로그인 완료`, kind: 'success' });
     return { ok: true, account: summary };
   } catch (error) {
-    send('status', { text: `로그인 실패: ${error.message}`, kind: 'error' });
-    return { ok: false, error: error.message };
+    const message = friendlyMicrosoftAuthError(error);
+    send('status', { text: `로그인 실패: ${message}`, kind: 'error' });
+    return { ok: false, error: message };
   }
 });
 ipcMain.handle('auth-relay-open-site', async () => {
@@ -796,7 +797,7 @@ ipcMain.handle('auth-relay-redeem', async (_event, code) => {
 ipcMain.handle('auth-relay-health', async () => {
   try {
     const baseUrl = await configuredAuthRelayUrl();
-    const response = await fetch(`${baseUrl}/health`, { headers:{'Accept':'application/json','User-Agent':APP_UA} });
+    const response = await fetchWithTimeout(`${baseUrl}/health`, { headers:{'Accept':'application/json','User-Agent':APP_UA} }, 8000);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return { ok:true, url:baseUrl };
   } catch (error) { return { ok:false, error:error.message }; }
@@ -2032,7 +2033,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.6 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.7 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

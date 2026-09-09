@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.13-beta.6',
+  appVersion: '0.4.13-beta.7',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -180,6 +180,18 @@ function openInstanceModal(id = currentInstance()?.id) {
 function login() {
   if (state.account) return;
   openModal('loginChoiceModal');
+}
+async function logout() {
+  if (!state.account) return;
+  try {
+    const r = await api.logout();
+    if (!r?.ok) return toast(r?.error || '로그아웃하지 못했습니다.', true);
+    state.account = null;
+    renderAccount();
+    toast('로그아웃했습니다.');
+  } catch (error) {
+    toast(`로그아웃하지 못했습니다: ${error?.message || error}`, true);
+  }
 }
 async function loginOnThisPc() {
   closeModal('loginChoiceModal');
@@ -658,7 +670,7 @@ $('#checkInstanceVersionsBtn').addEventListener('click',async()=>{const id=state
 $('#pickJavaBtn').addEventListener('click',async()=>{const r=await api.pickJava();if(r.ok)$('#editJavaPath').value=r.path||'';});
 $('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const r=await api.updateInstanceSettings(id,{name:$('#editName').value,version:$('#editVersion').value,loader:$('#editLoader').value,loaderVersion:$('#editLoader').value==='vanilla'?null:$('#editLoaderVersion').value,autoUpdateContent:$('#editAutoContent').checked,autoUpdateMinecraftVersion:$('#editAutoMinecraftVersion').checked,autoUpdateLoaderVersion:$('#editAutoLoaderVersion').checked,memory:{min:$('#editMinRam').value,max:$('#editMaxRam').value},screen:{width:$('#editWidth').value,height:$('#editHeight').value,fullscreen:$('#editFullscreen').checked},javaPath:$('#editJavaPath').value,jvmArgs:$('#editJvmArgs').value,gameArgs:$('#editGameArgs').value});if(!r.ok)return toast(r.error||'설정을 저장하지 못했습니다.',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스 설정을 저장했습니다.');});
 $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!(await askConfirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`,'인스턴스 삭제')))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스를 삭제했습니다.');});
-$('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
+$('#accountPanel').addEventListener('click',login);$('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
 $('#loginOnThisPcBtn').addEventListener('click',loginOnThisPc);
 $('#loginOnOtherDeviceBtn').addEventListener('click',startOtherDeviceLogin);
 $('#relayOpenSiteBtn').addEventListener('click',openRelaySite);
@@ -701,7 +713,7 @@ $('#uninstallYesBtn').addEventListener('click',async()=>{
 });
 
 api.onAccountChanged(a=>{state.account=a;renderAccount();});
-api.onStatus(s=>{if(s?.kind==='error'&&s.text)toast(s.text,true);});
+api.onStatus(s=>{if(s?.text)toast(s.text,s?.kind==='error');});
 api.onLaunchProgress(p=>{if(state.launchState!=='stopping')showLaunchPop('Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
 api.onLaunchState(applyLaunchState);
 api.onLaunchError(msg=>{state.launchState='idle';renderPlayButton();hideLaunchPop();toast(`Minecraft 실행 실패: ${msg}`,true);});
@@ -713,7 +725,7 @@ api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.6';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.7';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 

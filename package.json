@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.13-beta.6",
-  "description": "EasyCraft Launcher 0.4.13-beta.6 - EasyCraft relay-code Microsoft login beta, Vanilla offline fallback, live logs and Modrinth content",
+  "version": "0.4.13-beta.7",
+  "description": "EasyCraft Launcher 0.4.13-beta.7 - EasyCraft relay-code Microsoft login beta, Vanilla offline fallback, live logs and Modrinth content",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
@@ -9,7 +9,8 @@
     "start": "electron .",
     "prepare:build": "node scripts/write-build-info.js",
     "dist:win": "npm run prepare:build && electron-builder --win nsis",
-    "dist:portable": "npm run prepare:build && electron-builder --win portable"
+    "dist:portable": "npm run prepare:build && electron-builder --win portable",
+    "test:smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
     "electron-updater": "6.8.9",

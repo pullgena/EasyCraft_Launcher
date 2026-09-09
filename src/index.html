@@ -17,12 +17,12 @@
         <button class="nav-btn" data-view="settings" title="설정"><span>⚙</span><em>설정</em></button>
       </nav>
       <div class="rail-space"></div>
-      <button class="account-orb" id="accountPanel" title="계정">
+      <button class="account-orb" id="accountPanel" type="button" title="계정">
         <div class="avatar" id="accountAvatar">?</div>
         <div class="account-hover"><strong id="accountName">로그인 필요</strong><span id="accountSub">Microsoft 계정</span></div>
       </button>
-      <button class="rail-account-action" id="railLoginBtn">로그인</button>
-      <button class="rail-account-action hidden" id="railLogoutBtn">로그아웃</button>
+      <button class="rail-account-action" id="railLoginBtn" type="button">로그인</button>
+      <button class="rail-account-action hidden" id="railLogoutBtn" type="button">로그아웃</button>
       <div class="version-foot" id="versionFoot">EasyCraft</div>
     </aside>
 
@@ -129,7 +129,7 @@
             <section class="setting-row">
               <div class="setting-index">01</div>
               <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">Microsoft 계정이 연결되지 않았습니다.</h3><p>Minecraft Java Edition 계정을 연결합니다.</p></div>
-              <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn">로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn">로그아웃</button></div>
+              <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn" type="button">로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn" type="button">로그아웃</button></div>
             </section>
             <section class="setting-row">
               <div class="setting-index">02</div>
@@ -148,7 +148,7 @@
             </section>
             <section class="setting-row">
               <div class="setting-index">05</div>
-              <div class="setting-copy"><span>CODE LOGIN · BETA 6</span><h3>EasyCraft 인증 사이트</h3><p>학교 PC 또는 휴대폰에서 Microsoft 로그인 후 일회용 EasyCraft 코드를 발급받는 사이트 주소입니다.</p></div>
+              <div class="setting-copy"><span>CODE LOGIN · BETA 7</span><h3>EasyCraft 인증 사이트</h3><p>학교 PC 또는 휴대폰에서 Microsoft 로그인 후 일회용 EasyCraft 코드를 발급받는 사이트 주소입니다.</p></div>
               <div class="setting-actions client-id-actions"><input class="input compact" id="authRelayUrlInput" placeholder="https://easycraft-auth.example.workers.dev" /><button class="setting-button" id="saveAuthRelayUrlBtn">저장</button></div>
             </section>
             <section class="setting-row">
@@ -212,14 +212,14 @@
       <p class="login-choice-note">학교나 공용 PC에서 로그인 창이 막히면 다른 기기에서 로그인 기능을 시험해 볼 수 있습니다.</p>
       <div class="login-choice-list">
         <button class="login-method" id="loginOnThisPcBtn" type="button"><span class="login-method-icon">▣</span><span><strong>이 PC에서 로그인</strong><small>기존 Microsoft 로그인 창을 사용합니다.</small></span><i>→</i></button>
-        <button class="login-method beta" id="loginOnOtherDeviceBtn" type="button"><span class="login-method-icon">⌁</span><span><strong>EasyCraft 코드 로그인 <em>BETA 6</em></strong><small>인증 사이트에서 Microsoft 로그인 후 발급된 코드를 EasyCraft에 입력합니다.</small></span><i>→</i></button>
+        <button class="login-method beta" id="loginOnOtherDeviceBtn" type="button"><span class="login-method-icon">⌁</span><span><strong>EasyCraft 코드 로그인 <em>BETA 7</em></strong><small>인증 사이트에서 Microsoft 로그인 후 발급된 코드를 EasyCraft에 입력합니다.</small></span><i>→</i></button>
       </div>
     </div>
   </div>
 
   <div class="modal hidden" id="relayLoginModal">
     <div class="modal-card device-login-card">
-      <div class="modal-head"><div><span class="setting-label">EASYCRAFT CODE LOGIN · BETA 6</span><h2>인증 코드로 로그인</h2></div><button class="close-btn" data-close="relayLoginModal">×</button></div>
+      <div class="modal-head"><div><span class="setting-label">EASYCRAFT CODE LOGIN · BETA 7</span><h2>인증 코드로 로그인</h2></div><button class="close-btn" data-close="relayLoginModal">×</button></div>
       <p class="device-login-guide">학교 PC에서 인증 사이트를 열어 Microsoft 계정으로 로그인하세요. 학교에서 로그인이 막히면 같은 사이트를 휴대폰에서 열어도 됩니다. 로그인 후 사이트에 표시되는 일회용 코드를 아래에 입력하세요.</p>
       <div class="device-login-url"><span>EasyCraft 인증 사이트</span><b id="relayLoginUrlText">설정에서 주소를 지정하세요</b></div>
       <div class="device-link-actions"><button class="btn primary" id="relayOpenSiteBtn" type="button">인증 사이트 열기</button></div>
@@ -227,7 +227,7 @@
       <input class="input relay-code-input" id="relayCodeInput" autocomplete="one-time-code" spellcheck="false" maxlength="17" placeholder="EC-ABCD-EFGH-JKLM" />
       <div class="device-login-state"><i class="device-spinner hidden" id="relayLoginSpinner"></i><span id="relayLoginStatus">사이트에서 Microsoft 로그인 후 코드를 발급받아 입력해 주세요.</span></div>
       <div class="modal-actions"><button class="btn subtle" data-close="relayLoginModal">취소</button><button class="btn primary" id="relayLoginConfirmBtn" type="button">코드로 로그인</button></div>
-      <p class="beta-footnote">Beta 6 · 코드는 5분 동안 한 번만 사용할 수 있습니다. Microsoft 비밀번호는 EasyCraft Launcher가 받지 않습니다.</p>
+      <p class="beta-footnote">Beta 7 · 코드는 5분 동안 한 번만 사용할 수 있습니다. Microsoft 비밀번호는 EasyCraft Launcher가 받지 않습니다.</p>
     </div>
   </div>
 
