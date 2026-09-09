@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.13-beta.7',
+  appVersion: '0.4.13-beta.8',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -29,7 +29,7 @@ const state = {
   searchLoading: false,
   logLines: [],
   logInstanceId: null,
-  authRelayBusy: false
+  microsoftLoginBusy: false
 };
 
 function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -177,9 +177,34 @@ function openInstanceModal(id = currentInstance()?.id) {
   openModal('instanceModal');
 }
 
-function login() {
-  if (state.account) return;
-  openModal('loginChoiceModal');
+function setMicrosoftLoginBusy(busy) {
+  state.microsoftLoginBusy = !!busy;
+  for (const id of ['railLoginBtn','settingsLoginBtn']) {
+    const btn = $(`#${id}`);
+    if (!btn) continue;
+    btn.disabled = !!busy;
+    btn.textContent = busy ? '로그인 중…' : '로그인';
+  }
+}
+async function login() {
+  if (state.account || state.microsoftLoginBusy) return;
+  setMicrosoftLoginBusy(true);
+  toast('기본 브라우저에서 Microsoft 로그인을 완료해 주세요.');
+  try {
+    const r = await api.loginMicrosoft();
+    if (!r?.ok) {
+      const message = r?.error || '로그인하지 못했습니다.';
+      if (/Client ID|클라이언트 ID/i.test(message)) switchView('settings');
+      return toast(message, true);
+    }
+    state.account = r.account;
+    renderAccount();
+    toast(`${r.account?.name || 'Microsoft 계정'} 로그인 완료`);
+  } catch (error) {
+    toast(`로그인하지 못했습니다: ${error?.message || error}`, true);
+  } finally {
+    setMicrosoftLoginBusy(false);
+  }
 }
 async function logout() {
   if (!state.account) return;
@@ -193,54 +218,7 @@ async function logout() {
     toast(`로그아웃하지 못했습니다: ${error?.message || error}`, true);
   }
 }
-async function loginOnThisPc() {
-  closeModal('loginChoiceModal');
-  const r = await api.loginMicrosoft();
-  if (!r.ok) toast(r.error || '로그인하지 못했습니다.', true); else { state.account=r.account; renderAccount(); }
-}
-function setRelayLoginStatus(text, kind='waiting') {
-  $('#relayLoginStatus').textContent = text || '';
-  const row = $('#relayLoginStatus')?.closest('.device-login-state');
-  row?.classList.toggle('complete', kind === 'complete');
-  row?.classList.toggle('error', kind === 'error');
-  $('#relayLoginSpinner')?.classList.toggle('hidden', kind !== 'loading');
-}
-function formatRelayCodeInput(value) {
-  const clean = String(value || '').toUpperCase().replace(/[^A-Z2-9]/g,'').replace(/^EC/,'').slice(0,12);
-  const groups = clean.match(/.{1,4}/g) || [];
-  return clean ? `EC-${groups.join('-')}` : '';
-}
-async function startOtherDeviceLogin() {
-  closeModal('loginChoiceModal');
-  const url = state.config.launcherSettings?.authRelayUrl || '';
-  $('#relayLoginUrlText').textContent = url || '설정에서 주소를 지정하세요';
-  $('#relayCodeInput').value = '';
-  setRelayLoginStatus(url ? '인증 사이트에서 Microsoft 로그인 후 발급된 코드를 입력해 주세요.' : '먼저 설정에서 EasyCraft 인증 사이트 주소를 저장해 주세요.', url ? 'waiting' : 'error');
-  openModal('relayLoginModal');
-  setTimeout(()=>$('#relayCodeInput').focus(),80);
-}
-async function openRelaySite() {
-  const r = await api.openAuthRelaySite();
-  if (!r?.ok) return setRelayLoginStatus(r?.error || '인증 사이트를 열지 못했습니다.','error');
-  setRelayLoginStatus('사이트에서 Microsoft 로그인을 완료한 뒤 표시되는 코드를 입력해 주세요.');
-}
-async function redeemRelayCode() {
-  if (state.authRelayBusy) return;
-  const code = $('#relayCodeInput').value.trim();
-  if (!code) return setRelayLoginStatus('사이트에서 발급된 코드를 입력해 주세요.','error');
-  state.authRelayBusy = true;
-  $('#relayLoginConfirmBtn').disabled = true;
-  setRelayLoginStatus('코드를 확인하고 Minecraft 계정을 연결하고 있습니다…','loading');
-  const r = await api.redeemAuthRelayCode(code);
-  state.authRelayBusy = false;
-  $('#relayLoginConfirmBtn').disabled = false;
-  if (!r?.ok) return setRelayLoginStatus(r?.error || '코드 로그인에 실패했습니다.','error');
-  state.account = r.account;
-  renderAccount();
-  setRelayLoginStatus(`${r.account?.name || 'Microsoft 계정'} 로그인 완료`,'complete');
-  toast(`${r.account?.name || 'Microsoft 계정'} 로그인 완료`);
-  setTimeout(()=>closeModal('relayLoginModal'),700);
-}
+
 async function launchOrStop() {
   const inst=currentInstance(); if (!inst) return toast('인스턴스를 먼저 만들어 주세요.', true);
   if (['preparing','running','stopping'].includes(state.launchState)) {
@@ -626,7 +604,7 @@ function dismissStuckStartupGate(){
 // 어떤 IPC/네트워크 await보다 먼저 타이머를 걸어 Minecraft 버전 API까지 멈춘 경우도 복구합니다.
 const startupGateFailsafe=setTimeout(dismissStuckStartupGate,STARTUP_GATE_FAILSAFE_MS);
 function applyUpdateState(u={}){state.update={...state.update,...u};updateSettingsText(state.update);renderStartupUpdate(state.update);}
-function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;const c=$('#authRelayUrlInput');if(c)c.value=state.config.launcherSettings?.authRelayUrl||'';}
+function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;const c=$('#microsoftClientIdInput');if(c)c.value=state.config.launcherSettings?.microsoftClientId||'';}
 
 function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classList.contains('active')){
   const heading=$('#pageHeading');if(!heading)return;
@@ -652,7 +630,7 @@ $('#autoDeleteLogsToggle').addEventListener('change',async e=>{
   if(!r?.ok){e.currentTarget.checked=!e.currentTarget.checked;return toast(r?.error||'로그 설정을 저장하지 못했습니다.',true);}
   state.config=r.config;toast(e.currentTarget.checked?'로그 자동 삭제를 켰습니다.':'로그 자동 삭제를 껐습니다.');
 });
-$('#saveAuthRelayUrlBtn').addEventListener('click',async()=>{const value=$('#authRelayUrlInput').value.trim();const r=await api.updateLauncherSettings({authRelayUrl:value});if(!r?.ok)return toast(r?.error||'인증 사이트 주소를 저장하지 못했습니다.',true);state.config=r.config;if(!value)return toast('인증 사이트 주소를 비웠습니다.');const h=await api.checkAuthRelay();toast(h?.ok?'인증 사이트 주소를 저장했고 서버 연결도 확인했습니다.':`주소는 저장했지만 서버 연결 확인에 실패했습니다: ${h?.error||'연결 실패'}`,!h?.ok);});
+$('#saveMicrosoftClientIdBtn').addEventListener('click',async()=>{const value=$('#microsoftClientIdInput').value.trim();const r=await api.updateLauncherSettings({microsoftClientId:value});if(!r?.ok)return toast(r?.error||'Microsoft Client ID를 저장하지 못했습니다.',true);state.config=r.config;toast(value?'Microsoft Client ID를 저장했습니다. 이제 로그인 버튼을 눌러 주세요.':'Microsoft Client ID를 비웠습니다.');});
 $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.dataset.close)));
 $$('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target!==m)return;if(['dependencyModal','confirmModal'].includes(m.id))return;closeModal(m.id);}));
 $('#newInstanceBtn').addEventListener('click',openCreateModal);
@@ -671,12 +649,6 @@ $('#pickJavaBtn').addEventListener('click',async()=>{const r=await api.pickJava(
 $('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const r=await api.updateInstanceSettings(id,{name:$('#editName').value,version:$('#editVersion').value,loader:$('#editLoader').value,loaderVersion:$('#editLoader').value==='vanilla'?null:$('#editLoaderVersion').value,autoUpdateContent:$('#editAutoContent').checked,autoUpdateMinecraftVersion:$('#editAutoMinecraftVersion').checked,autoUpdateLoaderVersion:$('#editAutoLoaderVersion').checked,memory:{min:$('#editMinRam').value,max:$('#editMaxRam').value},screen:{width:$('#editWidth').value,height:$('#editHeight').value,fullscreen:$('#editFullscreen').checked},javaPath:$('#editJavaPath').value,jvmArgs:$('#editJvmArgs').value,gameArgs:$('#editGameArgs').value});if(!r.ok)return toast(r.error||'설정을 저장하지 못했습니다.',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스 설정을 저장했습니다.');});
 $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!(await askConfirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`,'인스턴스 삭제')))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스를 삭제했습니다.');});
 $('#accountPanel').addEventListener('click',login);$('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
-$('#loginOnThisPcBtn').addEventListener('click',loginOnThisPc);
-$('#loginOnOtherDeviceBtn').addEventListener('click',startOtherDeviceLogin);
-$('#relayOpenSiteBtn').addEventListener('click',openRelaySite);
-$('#relayLoginConfirmBtn').addEventListener('click',redeemRelayCode);
-$('#relayCodeInput').addEventListener('input',e=>{e.target.value=formatRelayCodeInput(e.target.value);});
-$('#relayCodeInput').addEventListener('keydown',e=>{if(e.key==='Enter')redeemRelayCode();});
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
 async function openSelectedInstanceFolder(){
   const i=currentInstance();
@@ -725,7 +697,7 @@ api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.7';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.13-beta.8';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 

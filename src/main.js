@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const crypto = require('crypto');
+const http = require('http');
 const { Launch, Microsoft } = require('minecraft-java-core');
 const AdmZip = require('adm-zip');
 
@@ -13,7 +14,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.13-beta.7 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.13-beta.8 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -65,7 +66,7 @@ function defaultConfig() {
   return {
     selectedInstanceId: null,
     memory: { min: 2, max: 6 },
-    launcherSettings: { autoDeleteLogs: true, microsoftClientId: '', authRelayUrl: '' },
+    launcherSettings: { autoDeleteLogs: true, microsoftClientId: '' },
     instances: []
   };
 }
@@ -307,6 +308,8 @@ function friendlyMicrosoftAuthError(error) {
   if (/expired_token|code_expired/i.test(raw)) return '인증 코드가 만료되었습니다. 다시 시도해 주세요.';
   if (/NO_MINECRAFT_ACCOUNT/i.test(raw)) return '이 Microsoft 계정에 Minecraft Java 프로필이 없습니다.';
   if (/NO_MINECRAFT_ENTITLEMENTS/i.test(raw)) return '이 계정에서 Minecraft Java Edition 소유권을 확인하지 못했습니다.';
+  if (/AADSTS50011|reply URL|redirect_uri/i.test(raw)) return 'Microsoft 앱의 Redirect URI가 맞지 않습니다. Entra의 Mobile and desktop applications에 http://localhost를 등록해 주세요.';
+  if (/AADSTS7000218|public client/i.test(raw)) return 'Microsoft 앱이 데스크톱 Public Client로 설정되지 않았습니다. Entra Authentication 설정에서 모바일/데스크톱 흐름을 허용해 주세요.';
   if (/invalid app registration|AppRegInfo|XboxLive\.signin|AADSTS700016/i.test(raw)) return 'EasyCraft용 Microsoft 앱 등록이 Xbox/Minecraft 인증에 사용할 수 없는 상태입니다. 설정한 Client ID와 Microsoft/Xbox 승인 상태를 확인해 주세요.';
   return raw;
 }
@@ -326,55 +329,126 @@ async function persistMicrosoftAccount(account) {
 }
 function normalizeMicrosoftClientId(value) {
   const id = String(value || '').trim();
-  if (!id) throw new Error('Microsoft Client ID가 없습니다.');
+  if (!id) throw new Error('Microsoft Client ID가 없습니다. 설정에서 Application (client) ID를 먼저 저장해 주세요.');
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('Microsoft Client ID 형식이 올바르지 않습니다.');
   return id;
 }
-function normalizeAuthRelayUrl(value) {
-  const raw = String(value || '').trim().replace(/\/+$/, '');
-  if (!raw) throw new Error('먼저 설정에서 EasyCraft 인증 사이트 주소를 입력해 주세요.');
-  let parsed;
-  try { parsed = new URL(raw); } catch { throw new Error('EasyCraft 인증 사이트 주소가 올바르지 않습니다.'); }
-  const local = ['localhost','127.0.0.1','::1'].includes(parsed.hostname);
-  if (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:')) throw new Error('인증 사이트는 HTTPS 주소여야 합니다. (개발용 localhost만 HTTP 허용)');
-  return parsed.origin + parsed.pathname.replace(/\/$/, '');
-}
-async function configuredAuthRelayUrl() {
-  const env = String(process.env.EASYCRAFT_AUTH_RELAY_URL || '').trim();
-  if (env) return normalizeAuthRelayUrl(env);
+async function configuredMicrosoftClientId() {
+  const env = String(process.env.EASYCRAFT_MS_CLIENT_ID || '').trim();
+  if (env) return normalizeMicrosoftClientId(env);
   const config = await readConfig();
-  return normalizeAuthRelayUrl(config.launcherSettings?.authRelayUrl);
+  return normalizeMicrosoftClientId(config.launcherSettings?.microsoftClientId);
 }
-function normalizeRelayCode(value) {
-  const code = String(value || '').trim().toUpperCase().replace(/\s+/g,'');
-  if (!/^EC-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code)) throw new Error('인증 코드는 EC-XXXX-XXXX-XXXX 형식으로 입력해 주세요.');
-  return code;
+function base64Url(buffer) {
+  return Buffer.from(buffer).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
-async function relayRequest(baseUrl, endpoint, body) {
-  const response = await fetchWithTimeout(`${baseUrl}${endpoint}`, {
-    method:'POST',
-    headers:{'Content-Type':'application/json','Accept':'application/json','User-Agent':APP_UA},
-    body:JSON.stringify(body || {})
-  }, 15000);
-  let data = {};
-  try { data = await response.json(); } catch {}
-  if (!response.ok || data?.ok === false) throw new Error(data?.error || `EasyCraft 인증 서버 오류 (HTTP ${response.status})`);
-  return data;
+function oauthResultPage(title, message, ok = true) {
+  const safeTitle = String(title || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const safeMessage = String(message || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><style>body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0f1412;color:#f4f7f5;display:grid;place-items:center;min-height:100vh;margin:0}.card{width:min(520px,calc(100% - 40px));padding:34px;border:1px solid #2d3833;border-radius:22px;background:#17201c;box-shadow:0 20px 70px #0008}.mark{font-size:42px;margin-bottom:14px}.ok{color:#7ee2a8}.bad{color:#ff9b9b}h1{margin:0 0 12px;font-size:27px}p{line-height:1.7;color:#c9d3ce}.small{font-size:13px;color:#91a098;margin-top:18px}</style></head><body><main class="card"><div class="mark ${ok?'ok':'bad'}">${ok?'✓':'!'}</div><h1>${safeTitle}</h1><p>${safeMessage}</p><p class="small">이 탭은 닫아도 됩니다. EasyCraft Launcher로 돌아가세요.</p></main></body></html>`;
+}
+async function microsoftPkceLogin() {
+  const clientId = await configuredMicrosoftClientId();
+  const verifier = base64Url(crypto.randomBytes(64));
+  const challenge = base64Url(crypto.createHash('sha256').update(verifier).digest());
+  const state = base64Url(crypto.randomBytes(24));
+
+  let settled = false;
+  let resolveCallback;
+  let rejectCallback;
+  const callbackPromise = new Promise((resolve, reject) => { resolveCallback = resolve; rejectCallback = reject; });
+  const server = http.createServer((req, res) => {
+    if (settled) { res.writeHead(204); res.end(); return; }
+    let incoming;
+    try { incoming = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`); }
+    catch { res.writeHead(400, {'Content-Type':'text/plain; charset=utf-8'}); res.end('잘못된 요청입니다.'); return; }
+    const returnedState = incoming.searchParams.get('state') || '';
+    const code = incoming.searchParams.get('code') || '';
+    const oauthError = incoming.searchParams.get('error') || '';
+    const oauthDescription = incoming.searchParams.get('error_description') || '';
+    if (!code && !oauthError) {
+      res.writeHead(200, {'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
+      res.end(oauthResultPage('EasyCraft 로그인 대기 중', 'Microsoft 로그인 결과를 기다리고 있습니다. 브라우저의 Microsoft 로그인 화면을 완료해 주세요.', true));
+      return;
+    }
+    if (returnedState !== state) {
+      settled = true;
+      res.writeHead(400, {'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
+      res.end(oauthResultPage('로그인 확인 실패', '보안 확인 값이 일치하지 않습니다. EasyCraft에서 다시 로그인해 주세요.', false));
+      rejectCallback(new Error('Microsoft 로그인 state 검증에 실패했습니다. 다시 시도해 주세요.'));
+      return;
+    }
+    if (oauthError) {
+      settled = true;
+      res.writeHead(400, {'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
+      res.end(oauthResultPage('Microsoft 로그인 취소', oauthDescription || oauthError, false));
+      rejectCallback(new Error(oauthDescription || oauthError));
+      return;
+    }
+    settled = true;
+    res.writeHead(200, {'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
+    res.end(oauthResultPage('Microsoft 로그인 완료', '인증 결과를 EasyCraft가 받았습니다. Minecraft 계정을 확인하고 있습니다.', true));
+    resolveCallback(code);
+  });
+
+  await new Promise((resolve, reject) => {
+    const onError = error => { server.off('listening', onListening); reject(error); };
+    const onListening = () => { server.off('error', onError); resolve(); };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(0, 'localhost');
+  }).catch(error => { throw new Error(`이 PC에서 로그인 수신기를 열지 못했습니다: ${error.message}`); });
+
+  const address = server.address();
+  if (!address || typeof address === 'string') { server.close(); throw new Error('localhost 로그인 포트를 만들지 못했습니다.'); }
+  const redirectUri = `http://localhost:${address.port}`;
+  const authorizeUrl = new URL('https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize');
+  authorizeUrl.searchParams.set('client_id', clientId);
+  authorizeUrl.searchParams.set('response_type', 'code');
+  authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+  authorizeUrl.searchParams.set('response_mode', 'query');
+  authorizeUrl.searchParams.set('scope', 'XboxLive.signin offline_access');
+  authorizeUrl.searchParams.set('code_challenge', challenge);
+  authorizeUrl.searchParams.set('code_challenge_method', 'S256');
+  authorizeUrl.searchParams.set('state', state);
+  authorizeUrl.searchParams.set('prompt', 'select_account');
+
+  const timeout = setTimeout(() => {
+    if (settled) return;
+    settled = true;
+    rejectCallback(new Error('Microsoft 로그인 시간이 초과되었습니다. 다시 시도해 주세요.'));
+    try { server.close(); } catch {}
+  }, 180000);
+  timeout.unref?.();
+
+  try {
+    await shell.openExternal(authorizeUrl.toString());
+    const code = await callbackPromise;
+    const tokenResult = await postForm('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
+      client_id: clientId,
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: redirectUri,
+      code_verifier: verifier,
+      scope: 'XboxLive.signin offline_access'
+    });
+    const oauth2 = tokenResult.data || {};
+    if (!tokenResult.ok || !oauth2.access_token) throw new Error(oauth2.error_description || oauth2.error || `Microsoft 토큰 발급에 실패했습니다. (HTTP ${tokenResult.status})`);
+    send('status', { text: 'Microsoft 인증 완료 · Minecraft 계정을 확인하고 있습니다…', kind: 'info' });
+    const microsoft = new Microsoft(clientId);
+    const account = await promiseWithTimeout(microsoft.getAccount(oauth2), 45000, 'Xbox/Minecraft 계정 확인 시간이 초과되었습니다.');
+    if (!account || account.error) throw new Error(friendlyMicrosoftAuthError(account));
+    account._easycraftMicrosoftClientId = clientId;
+    account._easycraftAuthFlow = 'localhost-pkce-v1';
+    return account;
+  } finally {
+    clearTimeout(timeout);
+    try { server.close(); } catch {}
+  }
 }
 async function refreshMicrosoftAccount(account) {
-  if (account?._easycraftAuthFlow === 'relay-v1' && account?._easycraftAuthRelayUrl) {
-    const baseUrl = normalizeAuthRelayUrl(account._easycraftAuthRelayUrl);
-    const data = await relayRequest(baseUrl, '/api/refresh', { refresh_token: account.refresh_token });
-    const refreshed = data.account;
-    if (!refreshed || refreshed.error) throw new Error(friendlyMicrosoftAuthError(refreshed || data));
-    refreshed._easycraftAuthFlow = 'relay-v1';
-    refreshed._easycraftAuthRelayUrl = baseUrl;
-    refreshed._easycraftSkinUrl = account._easycraftSkinUrl || null;
-    refreshed._easycraftFaceDataUrl = account._easycraftFaceDataUrl || null;
-    refreshed._easycraftFaceOverlayDataUrl = account._easycraftFaceOverlayDataUrl || null;
-    return refreshed;
-  }
   const clientId = String(account?._easycraftMicrosoftClientId || '').trim();
+  // Beta 7 이전 계정은 저장된 방식으로 한 번 갱신을 시도합니다. 실패하면 새 localhost 로그인으로 다시 연결하면 됩니다.
   if (!clientId) return await new Microsoft().refresh(account);
   const tokenResult = await postForm('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
     client_id: clientId,
@@ -385,10 +459,10 @@ async function refreshMicrosoftAccount(account) {
   const oauth2 = tokenResult.data || {};
   if (!tokenResult.ok || !oauth2.access_token) throw new Error(oauth2.error_description || oauth2.error || `Microsoft 인증 갱신에 실패했습니다. (HTTP ${tokenResult.status})`);
   const microsoft = new Microsoft(clientId);
-  const refreshed = await microsoft.getAccount(oauth2);
+  const refreshed = await promiseWithTimeout(microsoft.getAccount(oauth2), 45000, 'Xbox/Minecraft 계정 확인 시간이 초과되었습니다.');
   if (!refreshed || refreshed.error) throw new Error(friendlyMicrosoftAuthError(refreshed));
   refreshed._easycraftMicrosoftClientId = clientId;
-  refreshed._easycraftAuthFlow = 'device-v2';
+  refreshed._easycraftAuthFlow = 'localhost-pkce-v1';
   refreshed._easycraftSkinUrl = account._easycraftSkinUrl || null;
   refreshed._easycraftFaceDataUrl = account._easycraftFaceDataUrl || null;
   refreshed._easycraftFaceOverlayDataUrl = account._easycraftFaceOverlayDataUrl || null;
@@ -717,7 +791,7 @@ ipcMain.handle('update-launcher-settings', async (_event, patch = {}) => {
   try {
     const config = await readConfig();
     const nextPatch = { ...(patch || {}) };
-    if (Object.prototype.hasOwnProperty.call(nextPatch, 'authRelayUrl') && String(nextPatch.authRelayUrl || '').trim()) nextPatch.authRelayUrl = normalizeAuthRelayUrl(nextPatch.authRelayUrl);
+    if (Object.prototype.hasOwnProperty.call(nextPatch, 'microsoftClientId') && String(nextPatch.microsoftClientId || '').trim()) nextPatch.microsoftClientId = normalizeMicrosoftClientId(nextPatch.microsoftClientId);
     config.launcherSettings = { ...defaultConfig().launcherSettings, ...(config.launcherSettings || {}), ...nextPatch };
     await writeConfig(config);
     if (config.launcherSettings.autoDeleteLogs !== false) await cleanupOldLogs(config);
@@ -760,47 +834,25 @@ ipcMain.handle('instance-version-status', async (_event, id) => {
     };
   } catch (error) { return { ok:false, error:error.message }; }
 });
+let activeMicrosoftLogin = null;
 ipcMain.handle('login-microsoft', async () => {
-  try {
-    send('status', { text: 'Microsoft 로그인 창을 준비하고 있습니다…', kind: 'info' });
-    const account = await new Microsoft().getAuth();
-    if (!account || account.error) throw new Error(account?.error || '로그인에 실패했습니다.');
-    const summary = await persistMicrosoftAccount(account);
-    send('status', { text: `${summary?.name || '계정'} 로그인 완료`, kind: 'success' });
-    return { ok: true, account: summary };
-  } catch (error) {
-    const message = friendlyMicrosoftAuthError(error);
-    send('status', { text: `로그인 실패: ${message}`, kind: 'error' });
-    return { ok: false, error: message };
-  }
-});
-ipcMain.handle('auth-relay-open-site', async () => {
-  try {
-    const baseUrl = await configuredAuthRelayUrl();
-    await shell.openExternal(baseUrl);
-    return { ok:true, url:baseUrl };
-  } catch (error) { return { ok:false, error:error.message }; }
-});
-ipcMain.handle('auth-relay-redeem', async (_event, code) => {
-  try {
-    const baseUrl = await configuredAuthRelayUrl();
-    const normalizedCode = normalizeRelayCode(code);
-    const data = await relayRequest(baseUrl, '/api/redeem', { code:normalizedCode });
-    const account = data.account;
-    if (!account || account.error) throw new Error(friendlyMicrosoftAuthError(account || data));
-    account._easycraftAuthFlow = 'relay-v1';
-    account._easycraftAuthRelayUrl = baseUrl;
-    const summary = await persistMicrosoftAccount(account);
-    return { ok:true, account:summary };
-  } catch (error) { return { ok:false, error:friendlyMicrosoftAuthError(error) }; }
-});
-ipcMain.handle('auth-relay-health', async () => {
-  try {
-    const baseUrl = await configuredAuthRelayUrl();
-    const response = await fetchWithTimeout(`${baseUrl}/health`, { headers:{'Accept':'application/json','User-Agent':APP_UA} }, 8000);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return { ok:true, url:baseUrl };
-  } catch (error) { return { ok:false, error:error.message }; }
+  if (activeMicrosoftLogin) return activeMicrosoftLogin;
+  activeMicrosoftLogin = (async () => {
+    try {
+      send('status', { text: '기본 브라우저에서 Microsoft 로그인을 열고 있습니다…', kind: 'info' });
+      const account = await microsoftPkceLogin();
+      const summary = await persistMicrosoftAccount(account);
+      send('status', { text: `${summary?.name || '계정'} 로그인 완료`, kind: 'success' });
+      return { ok: true, account: summary };
+    } catch (error) {
+      const message = friendlyMicrosoftAuthError(error);
+      send('status', { text: `로그인 실패: ${message}`, kind: 'error' });
+      return { ok: false, error: message };
+    } finally {
+      activeMicrosoftLogin = null;
+    }
+  })();
+  return activeMicrosoftLogin;
 });
 ipcMain.handle('logout', async () => {
   currentAccount = null;
@@ -2033,7 +2085,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.7 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.8 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

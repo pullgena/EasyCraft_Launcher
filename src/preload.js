@@ -6,9 +6,6 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   fetchLoaderVersions: (loader, minecraftVersion) => ipcRenderer.invoke('fetch-loader-versions', loader, minecraftVersion),
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
   loginMicrosoft: () => ipcRenderer.invoke('login-microsoft'),
-  openAuthRelaySite: () => ipcRenderer.invoke('auth-relay-open-site'),
-  redeemAuthRelayCode: code => ipcRenderer.invoke('auth-relay-redeem', code),
-  checkAuthRelay: () => ipcRenderer.invoke('auth-relay-health'),
   logout: () => ipcRenderer.invoke('logout'),
 
   createInstance: data => ipcRenderer.invoke('create-instance', data),

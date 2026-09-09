@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.13-beta.7",
-  "description": "EasyCraft Launcher 0.4.13-beta.7 - EasyCraft relay-code Microsoft login beta, Vanilla offline fallback, live logs and Modrinth content",
+  "version": "0.4.13-beta.8",
+  "description": "EasyCraft Launcher 0.4.13-beta.8 - system-browser Microsoft login with localhost PKCE, startup safety, Vanilla offline fallback and Modrinth content",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
