@@ -66,7 +66,7 @@ function defaultConfig() {
   return {
     selectedInstanceId: null,
     memory: { min: 2, max: 6 },
-    launcherSettings: { autoDeleteLogs: true, microsoftClientId: '' },
+    launcherSettings: { autoDeleteLogs: true },
     instances: []
   };
 }
@@ -81,7 +81,7 @@ async function readConfig() {
     return {
       ...defaultConfig(), ...parsed,
       memory: { ...defaultConfig().memory, ...(parsed.memory || {}) },
-      launcherSettings: { ...defaultConfig().launcherSettings, ...(parsed.launcherSettings || {}) },
+      launcherSettings: (() => { const value = { ...defaultConfig().launcherSettings, ...(parsed.launcherSettings || {}) }; delete value.microsoftClientId; return value; })(),
       instances: Array.isArray(parsed.instances) ? parsed.instances.map(i => normalizeInstance(i, parsed.memory)) : []
     };
   } catch {
@@ -310,7 +310,7 @@ function friendlyMicrosoftAuthError(error) {
   if (/NO_MINECRAFT_ENTITLEMENTS/i.test(raw)) return '이 계정에서 Minecraft Java Edition 소유권을 확인하지 못했습니다.';
   if (/AADSTS50011|reply URL|redirect_uri/i.test(raw)) return 'Microsoft 앱의 Redirect URI가 맞지 않습니다. Entra의 Mobile and desktop applications에 http://localhost를 등록해 주세요.';
   if (/AADSTS7000218|public client/i.test(raw)) return 'Microsoft 앱이 데스크톱 Public Client로 설정되지 않았습니다. Entra Authentication 설정에서 모바일/데스크톱 흐름을 허용해 주세요.';
-  if (/invalid app registration|AppRegInfo|XboxLive\.signin|AADSTS700016/i.test(raw)) return 'EasyCraft용 Microsoft 앱 등록이 Xbox/Minecraft 인증에 사용할 수 없는 상태입니다. 설정한 Client ID와 Microsoft/Xbox 승인 상태를 확인해 주세요.';
+  if (/invalid app registration|AppRegInfo|XboxLive\.signin|AADSTS700016/i.test(raw)) return 'EasyCraft용 Microsoft 앱 등록이 Xbox/Minecraft 인증에 사용할 수 없는 상태입니다. EasyCraft에 등록된 Microsoft 앱의 Xbox/Minecraft 승인 상태를 확인해 주세요.';
   return raw;
 }
 async function persistMicrosoftAccount(account) {
@@ -329,15 +329,16 @@ async function persistMicrosoftAccount(account) {
 }
 function normalizeMicrosoftClientId(value) {
   const id = String(value || '').trim();
-  if (!id) throw new Error('Microsoft Client ID가 없습니다. 설정에서 Application (client) ID를 먼저 저장해 주세요.');
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('Microsoft Client ID 형식이 올바르지 않습니다.');
+  if (!id) throw new Error('EasyCraft 빌드에 Microsoft 로그인 앱 정보가 포함되어 있지 않습니다. 개발자가 EASYCRAFT_MS_CLIENT_ID GitHub Secret을 등록한 뒤 다시 빌드해 주세요.');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new Error('EasyCraft에 내장된 Microsoft Client ID 형식이 올바르지 않습니다.');
   return id;
 }
-async function configuredMicrosoftClientId() {
+function configuredMicrosoftClientId() {
   const env = String(process.env.EASYCRAFT_MS_CLIENT_ID || '').trim();
   if (env) return normalizeMicrosoftClientId(env);
-  const config = await readConfig();
-  return normalizeMicrosoftClientId(config.launcherSettings?.microsoftClientId);
+  let bundled = '';
+  try { bundled = String(require('./microsoft-auth.json')?.clientId || '').trim(); } catch {}
+  return normalizeMicrosoftClientId(bundled);
 }
 function base64Url(buffer) {
   return Buffer.from(buffer).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
@@ -791,7 +792,6 @@ ipcMain.handle('update-launcher-settings', async (_event, patch = {}) => {
   try {
     const config = await readConfig();
     const nextPatch = { ...(patch || {}) };
-    if (Object.prototype.hasOwnProperty.call(nextPatch, 'microsoftClientId') && String(nextPatch.microsoftClientId || '').trim()) nextPatch.microsoftClientId = normalizeMicrosoftClientId(nextPatch.microsoftClientId);
     config.launcherSettings = { ...defaultConfig().launcherSettings, ...(config.launcherSettings || {}), ...nextPatch };
     await writeConfig(config);
     if (config.launcherSettings.autoDeleteLogs !== false) await cleanupOldLogs(config);

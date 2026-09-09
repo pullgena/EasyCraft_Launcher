@@ -1,13 +1,13 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.13-beta.8",
-  "description": "EasyCraft Launcher 0.4.13-beta.8 - system-browser Microsoft login with localhost PKCE, startup safety, Vanilla offline fallback and Modrinth content",
+  "version": "0.4.13-beta.8.1",
+  "description": "EasyCraft Launcher 0.4.13-beta.8.1 - one-PC localhost PKCE Microsoft login with developer-bundled Client ID, no user Client ID settings UI",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "prepare:build": "node scripts/write-build-info.js",
+    "prepare:build": "node scripts/configure-ms-client-id.js && node scripts/write-build-info.js",
     "dist:win": "npm run prepare:build && electron-builder --win nsis",
     "dist:portable": "npm run prepare:build && electron-builder --win portable",
     "test:smoke": "node scripts/smoke-test.js"

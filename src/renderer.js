@@ -194,7 +194,6 @@ async function login() {
     const r = await api.loginMicrosoft();
     if (!r?.ok) {
       const message = r?.error || '로그인하지 못했습니다.';
-      if (/Client ID|클라이언트 ID/i.test(message)) switchView('settings');
       return toast(message, true);
     }
     state.account = r.account;
@@ -604,7 +603,7 @@ function dismissStuckStartupGate(){
 // 어떤 IPC/네트워크 await보다 먼저 타이머를 걸어 Minecraft 버전 API까지 멈춘 경우도 복구합니다.
 const startupGateFailsafe=setTimeout(dismissStuckStartupGate,STARTUP_GATE_FAILSAFE_MS);
 function applyUpdateState(u={}){state.update={...state.update,...u};updateSettingsText(state.update);renderStartupUpdate(state.update);}
-function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;const c=$('#microsoftClientIdInput');if(c)c.value=state.config.launcherSettings?.microsoftClientId||'';}
+function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;}
 
 function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classList.contains('active')){
   const heading=$('#pageHeading');if(!heading)return;
@@ -630,7 +629,6 @@ $('#autoDeleteLogsToggle').addEventListener('change',async e=>{
   if(!r?.ok){e.currentTarget.checked=!e.currentTarget.checked;return toast(r?.error||'로그 설정을 저장하지 못했습니다.',true);}
   state.config=r.config;toast(e.currentTarget.checked?'로그 자동 삭제를 켰습니다.':'로그 자동 삭제를 껐습니다.');
 });
-$('#saveMicrosoftClientIdBtn').addEventListener('click',async()=>{const value=$('#microsoftClientIdInput').value.trim();const r=await api.updateLauncherSettings({microsoftClientId:value});if(!r?.ok)return toast(r?.error||'Microsoft Client ID를 저장하지 못했습니다.',true);state.config=r.config;toast(value?'Microsoft Client ID를 저장했습니다. 이제 로그인 버튼을 눌러 주세요.':'Microsoft Client ID를 비웠습니다.');});
 $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeModal(b.dataset.close)));
 $$('.modal').forEach(m=>m.addEventListener('click',e=>{if(e.target!==m)return;if(['dependencyModal','confirmModal'].includes(m.id))return;closeModal(m.id);}));
 $('#newInstanceBtn').addEventListener('click',openCreateModal);

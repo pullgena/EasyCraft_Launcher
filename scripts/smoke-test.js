@@ -54,8 +54,11 @@ for (const required of [
 ]) {
   if (!main.includes(required)) fail(`localhost PKCE invariant missing: ${required}`);
 }
-if (!html.includes('id="microsoftClientIdInput"') || !renderer.includes("$('#saveMicrosoftClientIdBtn')")) {
-  fail('Microsoft Client ID settings UI is incomplete');
+if (html.includes('microsoftClientIdInput') || html.includes('saveMicrosoftClientIdBtn') || renderer.includes('microsoftClientIdInput') || renderer.includes('saveMicrosoftClientIdBtn')) {
+  fail('Microsoft Client ID must not be exposed in the user settings UI');
+}
+if (!main.includes("require('./microsoft-auth.json')") || !fs.existsSync(path.join(root, 'src', 'microsoft-auth.json'))) {
+  fail('bundled Microsoft auth config is missing');
 }
 
 const conflictMarkers = ['<<<<<<<', '=======', '>>>>>>>'];
