@@ -7,10 +7,9 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
   loginMicrosoft: () => ipcRenderer.invoke('login-microsoft'),
   startDeviceLogin: () => ipcRenderer.invoke('device-login-start'),
-  completeDeviceLogin: (sessionId, authorizationCode) => ipcRenderer.invoke('device-login-complete', sessionId, authorizationCode),
   cancelDeviceLogin: sessionId => ipcRenderer.invoke('device-login-cancel', sessionId),
   openDeviceLoginUrl: url => ipcRenderer.invoke('device-login-open-url', url),
-  copyDeviceLoginLink: url => ipcRenderer.invoke('device-login-copy-link', url),
+  copyDeviceLoginCode: code => ipcRenderer.invoke('device-login-copy-code', code),
   logout: () => ipcRenderer.invoke('logout'),
 
   createInstance: data => ipcRenderer.invoke('create-instance', data),
@@ -64,5 +63,6 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   onLaunchClosed: callback => ipcRenderer.on('launch-closed', (_e, value) => callback(value)),
   onGameLog: callback => ipcRenderer.on('game-log', (_e, value) => callback(value)),
   onContentProgress: callback => ipcRenderer.on('content-progress', (_e, value) => callback(value)),
-  onLauncherUpdateState: callback => ipcRenderer.on('launcher-update-state', (_e, value) => callback(value))
+  onLauncherUpdateState: callback => ipcRenderer.on('launcher-update-state', (_e, value) => callback(value)),
+  onDeviceLoginState: callback => ipcRenderer.on('device-login-state', (_e, value) => callback(value))
 });

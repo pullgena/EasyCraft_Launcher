@@ -148,11 +148,16 @@
             </section>
             <section class="setting-row">
               <div class="setting-index">05</div>
+              <div class="setting-copy"><span>DEVICE LOGIN · BETA</span><h3>Microsoft Client ID</h3><p>microsoft.com/link 코드 로그인을 위한 EasyCraft 앱의 Application (client) ID입니다.</p></div>
+              <div class="setting-actions client-id-actions"><input class="input compact" id="microsoftClientIdInput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" /><button class="setting-button" id="saveMicrosoftClientIdBtn">저장</button></div>
+            </section>
+            <section class="setting-row">
+              <div class="setting-index">06</div>
               <div class="setting-copy"><span>FILES</span><h3>인스턴스 파일</h3><p>현재 인스턴스의 Minecraft 폴더를 엽니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsOpenFolderBtn">폴더 열기</button></div>
             </section>
             <section class="setting-row uninstall-row">
-              <div class="setting-index">06</div>
+              <div class="setting-index">07</div>
               <div class="setting-copy"><span>UNINSTALL</span><h3>EasyCraft Launcher 삭제</h3><p>런처와 EasyCraft가 관리하는 Minecraft 데이터를 이 PC에서 제거합니다.</p></div>
               <div class="setting-actions"><button class="setting-button danger" id="uninstallEasyCraftBtn">EasyCraft 삭제</button></div>
             </section>
@@ -207,31 +212,21 @@
       <p class="login-choice-note">학교나 공용 PC에서 로그인 창이 막히면 다른 기기에서 로그인 기능을 시험해 볼 수 있습니다.</p>
       <div class="login-choice-list">
         <button class="login-method" id="loginOnThisPcBtn" type="button"><span class="login-method-icon">▣</span><span><strong>이 PC에서 로그인</strong><small>기존 Microsoft 로그인 창을 사용합니다.</small></span><i>→</i></button>
-        <button class="login-method beta" id="loginOnOtherDeviceBtn" type="button"><span class="login-method-icon">⌁</span><span><strong>휴대폰에서 로그인 <em>BETA 3</em></strong><small>로그인 링크를 휴대폰으로 보내 Microsoft 계정을 인증합니다.</small></span><i>→</i></button>
+        <button class="login-method beta" id="loginOnOtherDeviceBtn" type="button"><span class="login-method-icon">⌁</span><span><strong>Microsoft 코드로 로그인 <em>BETA 4</em></strong><small>휴대폰에서 microsoft.com/link를 열고 짧은 코드를 입력합니다.</small></span><i>→</i></button>
       </div>
     </div>
   </div>
 
   <div class="modal hidden" id="deviceLoginModal">
     <div class="modal-card device-login-card">
-      <div class="modal-head"><div><span class="setting-label">OTHER DEVICE LOGIN · BETA 3</span><h2>인증 코드로 로그인</h2></div></div>
-      <p class="device-login-guide">아래 Microsoft 로그인 링크를 휴대폰이나 다른 PC로 보내 로그인하세요. 로그인이 끝나면 마지막 주소에서 <b>code= 뒤의 인증 코드</b>만 복사해 EasyCraft에 입력하세요. 전체 주소를 붙여넣어도 자동으로 코드를 찾아냅니다.</p>
-      <div class="device-login-url"><span>Microsoft 로그인 링크</span><b id="deviceLoginUrlText">로그인 링크 준비 중…</b></div>
-      <div class="device-link-actions">
-        <button class="mini-action" id="deviceLoginCopyBtn" type="button" disabled>링크 복사</button>
-        <button class="mini-action" id="deviceLoginOpenBtn" type="button" disabled>이 PC에서 열기</button>
-      </div>
-      <label class="device-result-field">
-        <span>Microsoft 인증 코드</span>
-        <input id="deviceLoginResultCode" type="text" autocomplete="off" spellcheck="false" placeholder="code= 뒤의 인증 코드를 입력하세요" />
-        <small>예: 마지막 주소가 ...?code=M.R3_BAY...&state=... 라면 M.R3_BAY... 부분만 입력합니다.</small>
-      </label>
-      <div class="device-login-state"><i class="device-spinner"></i><span id="deviceLoginStatus">Microsoft 로그인 링크를 준비하고 있습니다…</span></div>
-      <div class="modal-actions split">
-        <button class="btn subtle" id="deviceLoginCancelBtn" type="button">취소</button>
-        <div><button class="btn primary" id="deviceLoginCompleteBtn" type="button" disabled>인증 완료</button></div>
-      </div>
-      <p class="beta-footnote">Beta 3 · 비밀번호는 EasyCraft에 입력하지 않습니다. Microsoft 페이지에서만 로그인하며, EasyCraft에는 일회용 인증 코드만 입력합니다.</p>
+      <div class="modal-head"><div><span class="setting-label">MICROSOFT DEVICE LOGIN · BETA 4</span><h2>Microsoft 코드로 로그인</h2></div></div>
+      <p class="device-login-guide">휴대폰이나 다른 PC에서 Microsoft 인증 페이지를 열고 아래 코드를 입력하세요. 로그인 완료 후에는 EasyCraft가 자동으로 인증을 확인합니다.</p>
+      <div class="device-code-box"><span>인증 코드</span><strong id="deviceLoginCode">코드 생성 중…</strong><button class="mini-action" id="deviceLoginCopyBtn" type="button" disabled>코드 복사</button></div>
+      <div class="device-login-url"><span>인증 페이지</span><b id="deviceLoginUrlText">https://microsoft.com/link</b></div>
+      <div class="device-link-actions"><button class="btn primary" id="deviceLoginOpenBtn" type="button" disabled>인증 페이지 열기</button></div>
+      <div class="device-login-state"><i class="device-spinner"></i><span id="deviceLoginStatus">Microsoft 인증 코드를 준비하고 있습니다…</span></div>
+      <div class="modal-actions"><button class="btn subtle" id="deviceLoginCancelBtn" type="button">취소</button></div>
+      <p class="beta-footnote">Beta 4 · EasyCraft는 Microsoft 비밀번호를 받지 않습니다. 이 기능은 EasyCraft용 Microsoft 앱 등록(Client ID)이 필요합니다.</p>
     </div>
   </div>
 

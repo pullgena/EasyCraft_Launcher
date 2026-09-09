@@ -13,10 +13,10 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 const deviceLoginSessions = new Map();
-const DEVICE_LOGIN_CLIENT_ID = '00000000402b5328';
-const DEVICE_LOGIN_REDIRECT_URI = 'https://login.live.com/oauth20_desktop.srf';
+const DEVICE_LOGIN_AUTHORITY = 'https://login.microsoftonline.com/consumers/oauth2/v2.0';
+const DEVICE_LOGIN_SCOPE = 'XboxLive.signin offline_access';
 
-const APP_UA = 'EasyCraftLauncher/0.4.13-beta.3 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.13-beta.4 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -68,7 +68,7 @@ function defaultConfig() {
   return {
     selectedInstanceId: null,
     memory: { min: 2, max: 6 },
-    launcherSettings: { autoDeleteLogs: true },
+    launcherSettings: { autoDeleteLogs: true, microsoftClientId: '' },
     instances: []
   };
 }
@@ -181,7 +181,7 @@ async function loadSavedAccount() {
     // 이 캐시는 Vanilla 싱글플레이 오프라인 fallback에만 사용됩니다.
     currentAccount = cached;
     accountRefreshedAt = Number(cached._easycraftRefreshedAt || 0);
-    const refreshed = await new Microsoft().refresh(cached);
+    const refreshed = await refreshMicrosoftAccount(cached);
     if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'Microsoft 인증 갱신 실패');
     refreshed._easycraftSkinUrl = cached._easycraftSkinUrl || null;
     refreshed._easycraftFaceDataUrl = cached._easycraftFaceDataUrl || null;
@@ -269,6 +269,7 @@ function friendlyMicrosoftAuthError(error) {
   if (/expired_token|code_expired/i.test(raw)) return '인증 코드가 만료되었습니다. 다시 시도해 주세요.';
   if (/NO_MINECRAFT_ACCOUNT/i.test(raw)) return '이 Microsoft 계정에 Minecraft Java 프로필이 없습니다.';
   if (/NO_MINECRAFT_ENTITLEMENTS/i.test(raw)) return '이 계정에서 Minecraft Java Edition 소유권을 확인하지 못했습니다.';
+  if (/invalid app registration|AppRegInfo|XboxLive\.signin|AADSTS700016/i.test(raw)) return 'EasyCraft용 Microsoft 앱 등록이 Xbox/Minecraft 인증에 사용할 수 없는 상태입니다. 설정한 Client ID와 Microsoft/Xbox 승인 상태를 확인해 주세요.';
   return raw;
 }
 async function persistMicrosoftAccount(account) {
@@ -285,90 +286,111 @@ async function persistMicrosoftAccount(account) {
   send('account-changed', summary);
   return summary;
 }
+function normalizeMicrosoftClientId(value) {
+  const id = String(value || '').trim();
+  if (!id) throw new Error('먼저 설정에서 EasyCraft용 Microsoft Client ID를 입력해 주세요.');
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw new Error('Microsoft Client ID 형식이 올바르지 않습니다. Entra 앱 등록의 Application (client) ID를 입력해 주세요.');
+  }
+  return id;
+}
+async function configuredDeviceLoginClientId() {
+  const env = String(process.env.EASYCRAFT_MS_CLIENT_ID || '').trim();
+  if (env) return normalizeMicrosoftClientId(env);
+  const config = await readConfig();
+  return normalizeMicrosoftClientId(config.launcherSettings?.microsoftClientId);
+}
+function deviceSessionEvent(session, payload = {}) {
+  send('device-login-state', { sessionId: session?.id || null, ...payload });
+}
+async function microsoftAccountFromDeviceOauth(clientId, oauth2) {
+  const microsoft = new Microsoft(clientId);
+  if (typeof microsoft.getAccount !== 'function') throw new Error('현재 인증 모듈에서 Minecraft 계정 변환을 지원하지 않습니다.');
+  const account = await microsoft.getAccount(oauth2);
+  if (!account || account.error) throw new Error(friendlyMicrosoftAuthError(account));
+  account._easycraftMicrosoftClientId = clientId;
+  account._easycraftAuthFlow = 'device-v2';
+  return account;
+}
+async function refreshMicrosoftAccount(account) {
+  const clientId = String(account?._easycraftMicrosoftClientId || '').trim();
+  if (!clientId) return await new Microsoft().refresh(account);
+  const tokenResult = await postForm(`${DEVICE_LOGIN_AUTHORITY}/token`, {
+    client_id: clientId,
+    grant_type: 'refresh_token',
+    refresh_token: account.refresh_token,
+    scope: DEVICE_LOGIN_SCOPE
+  });
+  const oauth2 = tokenResult.data || {};
+  if (!tokenResult.ok || !oauth2.access_token) {
+    throw new Error(oauth2.error_description || oauth2.error || `Microsoft 인증 갱신에 실패했습니다. (HTTP ${tokenResult.status})`);
+  }
+  const refreshed = await microsoftAccountFromDeviceOauth(clientId, oauth2);
+  refreshed._easycraftSkinUrl = account._easycraftSkinUrl || null;
+  refreshed._easycraftFaceDataUrl = account._easycraftFaceDataUrl || null;
+  refreshed._easycraftFaceOverlayDataUrl = account._easycraftFaceOverlayDataUrl || null;
+  return refreshed;
+}
 async function createDeviceLoginSession() {
+  const clientId = await configuredDeviceLoginClientId();
+  const result = await postForm(`${DEVICE_LOGIN_AUTHORITY}/devicecode`, {
+    client_id: clientId,
+    scope: DEVICE_LOGIN_SCOPE
+  });
+  const d = result.data || {};
+  if (!result.ok || !d.device_code || !d.user_code) {
+    throw new Error(d.error_description || d.error || `Microsoft 인증 코드를 만들지 못했습니다. (HTTP ${result.status})`);
+  }
   const id = crypto.randomUUID();
-  const state = crypto.randomBytes(18).toString('hex');
-  const url = new URL('https://login.live.com/oauth20_authorize.srf');
-  url.searchParams.set('client_id', DEVICE_LOGIN_CLIENT_ID);
-  url.searchParams.set('response_type', 'code');
-  url.searchParams.set('redirect_uri', DEVICE_LOGIN_REDIRECT_URI);
-  url.searchParams.set('scope', 'XboxLive.signin offline_access');
-  url.searchParams.set('cobrandid', '8058f65d-ce06-4c30-9559-473c9275a65d');
-  url.searchParams.set('prompt', 'select_account');
-  url.searchParams.set('state', state);
   const session = {
-    id, state, authUrl: url.toString(),
-    expiresAt: Date.now() + (15 * 60 * 1000),
-    cancelled: false
+    id,
+    clientId,
+    deviceCode: d.device_code,
+    userCode: d.user_code,
+    verificationUri: d.verification_uri || 'https://microsoft.com/link',
+    verificationUriComplete: d.verification_uri_complete || null,
+    interval: Math.max(2, Number(d.interval || 5)),
+    expiresAt: Date.now() + (Math.max(60, Number(d.expires_in || 900)) * 1000),
+    cancelled: false,
+    finished: false
   };
   deviceLoginSessions.set(id, session);
+  setTimeout(() => pollDeviceLoginSession(session).catch(error => {
+    if (session.cancelled || session.finished) return;
+    session.finished = true;
+    deviceSessionEvent(session, { state:'error', error:friendlyMicrosoftAuthError(error) });
+    deviceLoginSessions.delete(session.id);
+  }), 0).unref?.();
   return session;
 }
-function parseMicrosoftAuthorizationCode(value, expectedState) {
-  const raw = String(value || '').trim();
-  if (!raw) throw new Error('Microsoft 로그인 후 표시된 인증 코드를 입력해 주세요.');
-
-  // 전체 리디렉션 URL을 붙여넣은 경우도 그대로 지원합니다.
-  if (/^https?:\/\//i.test(raw)) {
-    let parsed;
-    try { parsed = new URL(raw); } catch { throw new Error('Microsoft 로그인 완료 주소 또는 인증 코드 형식을 확인해 주세요.'); }
-    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'login.live.com' || !parsed.pathname.toLowerCase().includes('oauth20_desktop.srf')) {
-      throw new Error('Microsoft 로그인 완료 주소가 아닙니다. 인증 코드만 입력해도 됩니다.');
-    }
-    const error = parsed.searchParams.get('error');
-    if (error) throw new Error(parsed.searchParams.get('error_description') || error);
-    const state = parsed.searchParams.get('state');
-    if (!state || state !== expectedState) throw new Error('인증 세션 확인에 실패했습니다. 다른 기기 로그인을 처음부터 다시 시작해 주세요.');
-    const code = parsed.searchParams.get('code');
-    if (!code) throw new Error('Microsoft 로그인 완료 주소에서 인증 코드를 찾지 못했습니다.');
-    return code;
-  }
-
-  // code=...&state=... 같은 쿼리 문자열을 붙여넣은 경우도 지원합니다.
-  if (/^(?:code|error)=/i.test(raw)) {
-    const params = new URLSearchParams(raw.replace(/^\?/, ''));
-    const error = params.get('error');
-    if (error) throw new Error(params.get('error_description') || error);
-    const state = params.get('state');
-    if (state && state !== expectedState) throw new Error('인증 세션 확인에 실패했습니다. 다른 기기 로그인을 다시 시작해 주세요.');
-    const code = params.get('code');
-    if (!code) throw new Error('인증 코드를 찾지 못했습니다.');
-    return code;
-  }
-
-  // 사용자가 code= 뒤의 값만 복사한 경우. 인증 코드는 일회용이며 세션 만료시간도 별도로 검증합니다.
-  const compact = raw.replace(/^code\s*[:=]\s*/i, '').trim();
-  if (compact.length < 16 || /\s/.test(compact)) {
-    throw new Error('인증 코드 형식이 올바르지 않습니다. code= 뒤의 값만 복사해서 입력해 주세요.');
-  }
-  return compact;
-}
-async function finishDeviceLogin(sessionId, authorizationCode) {
-  const session = deviceLoginSessions.get(String(sessionId || ''));
-  if (!session) throw new Error('인증 세션을 찾을 수 없습니다. 다시 시작해 주세요.');
-  try {
-    if (session.cancelled) throw new Error('DEVICE_LOGIN_CANCELLED');
-    if (Date.now() >= session.expiresAt) throw new Error('인증 시간이 만료되었습니다. 다시 시도해 주세요.');
-    const code = parseMicrosoftAuthorizationCode(authorizationCode, session.state);
-    const tokenResult = await postForm('https://login.live.com/oauth20_token.srf', {
-      client_id: DEVICE_LOGIN_CLIENT_ID,
-      code,
-      grant_type: 'authorization_code',
-      redirect_uri: DEVICE_LOGIN_REDIRECT_URI
+async function pollDeviceLoginSession(session) {
+  let interval = session.interval;
+  while (!session.cancelled && !session.finished && Date.now() < session.expiresAt) {
+    await sleep(interval * 1000);
+    if (session.cancelled || session.finished) return;
+    const result = await postForm(`${DEVICE_LOGIN_AUTHORITY}/token`, {
+      client_id: session.clientId,
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      device_code: session.deviceCode
     });
-    const oauth2 = tokenResult.data || {};
-    if (!tokenResult.ok || !oauth2.access_token) {
-      throw new Error(oauth2.error_description || oauth2.error || `Microsoft 토큰 교환에 실패했습니다. (HTTP ${tokenResult.status})`);
+    const token = result.data || {};
+    if (result.ok && token.access_token) {
+      deviceSessionEvent(session, { state:'verifying', text:'Minecraft 계정과 소유권을 확인하고 있습니다…' });
+      const account = await microsoftAccountFromDeviceOauth(session.clientId, token);
+      const summary = await persistMicrosoftAccount(account);
+      session.finished = true;
+      deviceSessionEvent(session, { state:'complete', account:summary, text:`${summary?.name || 'Microsoft 계정'} 로그인 완료` });
+      deviceLoginSessions.delete(session.id);
+      return;
     }
-    const microsoft = new Microsoft(DEVICE_LOGIN_CLIENT_ID, DEVICE_LOGIN_REDIRECT_URI);
-    if (typeof microsoft.getAccount !== 'function') throw new Error('현재 인증 모듈에서 Minecraft 계정 변환을 지원하지 않습니다.');
-    const account = await microsoft.getAccount(oauth2);
-    const summary = await persistMicrosoftAccount(account);
-    send('status', { text:`${summary?.name || '계정'} 다른 기기 로그인 완료`, kind:'success' });
-    return { ok:true, account:summary };
-  } finally {
-    deviceLoginSessions.delete(String(sessionId || ''));
+    const code = String(token.error || '');
+    if (code === 'authorization_pending') continue;
+    if (code === 'slow_down') { interval += 5; continue; }
+    if (code === 'authorization_declined') throw new Error('Microsoft 로그인 승인이 취소되었습니다.');
+    if (code === 'expired_token') throw new Error('인증 코드가 만료되었습니다. 다시 시도해 주세요.');
+    throw new Error(token.error_description || token.error || `Microsoft 인증 확인에 실패했습니다. (HTTP ${result.status})`);
   }
+  if (!session.cancelled && !session.finished) throw new Error('인증 코드가 만료되었습니다. 다시 시도해 주세요.');
 }
 function versionParts(value) {
   return String(value || '').split(/[^0-9A-Za-z]+/).filter(Boolean).map(part => /^\d+$/.test(part) ? Number(part) : part.toLowerCase());
@@ -750,15 +772,15 @@ ipcMain.handle('login-microsoft', async () => {
 ipcMain.handle('device-login-start', async () => {
   try {
     const session = await createDeviceLoginSession();
-    return { ok:true, sessionId:session.id, authUrl:session.authUrl, expiresAt:session.expiresAt };
+    return {
+      ok:true,
+      sessionId:session.id,
+      userCode:session.userCode,
+      verificationUri:session.verificationUri,
+      verificationUriComplete:session.verificationUriComplete,
+      expiresAt:session.expiresAt
+    };
   } catch (error) { return { ok:false, error:friendlyMicrosoftAuthError(error) }; }
-});
-ipcMain.handle('device-login-complete', async (_event, sessionId, authorizationCode) => {
-  try { return await finishDeviceLogin(sessionId, authorizationCode); }
-  catch (error) {
-    if (String(error?.message || '') === 'DEVICE_LOGIN_CANCELLED') return { ok:false, cancelled:true };
-    return { ok:false, error:friendlyMicrosoftAuthError(error) };
-  }
 });
 ipcMain.handle('device-login-cancel', async (_event, sessionId) => {
   const session = deviceLoginSessions.get(String(sessionId || ''));
@@ -768,15 +790,18 @@ ipcMain.handle('device-login-cancel', async (_event, sessionId) => {
 });
 ipcMain.handle('device-login-open-url', async (_event, url) => {
   try {
-    const target = String(url || '');
+    const target = String(url || 'https://microsoft.com/link');
     const parsed = new URL(target);
-    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'login.live.com') throw new Error('허용되지 않은 Microsoft 인증 주소입니다.');
+    const host = parsed.hostname.toLowerCase();
+    if (parsed.protocol !== 'https:' || !['microsoft.com','www.microsoft.com','login.microsoftonline.com'].includes(host)) {
+      throw new Error('허용되지 않은 Microsoft 인증 주소입니다.');
+    }
     await shell.openExternal(target);
     return { ok:true };
   } catch (error) { return { ok:false, error:error.message }; }
 });
-ipcMain.handle('device-login-copy-link', async (_event, url) => {
-  try { clipboard.writeText(String(url || '')); return { ok:true }; }
+ipcMain.handle('device-login-copy-code', async (_event, code) => {
+  try { clipboard.writeText(String(code || '')); return { ok:true }; }
   catch (error) { return { ok:false, error:error.message }; }
 });
 ipcMain.handle('logout', async () => {
@@ -1682,7 +1707,7 @@ async function ensureFreshAccountForLaunch() {
   if (!currentAccount._easycraftOfflineCached && Date.now() - stamped < 6 * 60 * 60 * 1000) return { ok:true, cached:false };
   try {
     const previous = currentAccount;
-    const refreshed = await new Microsoft().refresh(previous);
+    const refreshed = await refreshMicrosoftAccount(previous);
     if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'Microsoft 인증 갱신 실패');
     refreshed._easycraftSkinUrl = previous._easycraftSkinUrl || null;
     refreshed._easycraftFaceDataUrl = previous._easycraftFaceDataUrl || null;
@@ -2010,7 +2035,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.1 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.13-beta.4 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };
