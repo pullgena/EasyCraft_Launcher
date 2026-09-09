@@ -16,7 +16,7 @@ const deviceLoginSessions = new Map();
 const DEVICE_LOGIN_CLIENT_ID = '00000000402b5328';
 const DEVICE_LOGIN_REDIRECT_URI = 'https://login.live.com/oauth20_desktop.srf';
 
-const APP_UA = 'EasyCraftLauncher/0.4.13-beta.2 (Minecraft launcher; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.13-beta.3 (Minecraft launcher; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -304,29 +304,52 @@ async function createDeviceLoginSession() {
   deviceLoginSessions.set(id, session);
   return session;
 }
-function parseCompletedMicrosoftRedirect(value, expectedState) {
+function parseMicrosoftAuthorizationCode(value, expectedState) {
   const raw = String(value || '').trim();
-  if (!raw) throw new Error('휴대폰에서 로그인을 마친 뒤 마지막 주소 전체를 붙여넣어 주세요.');
-  let parsed;
-  try { parsed = new URL(raw); } catch { throw new Error('주소 형식이 올바르지 않습니다. 브라우저 주소창의 마지막 주소 전체를 복사해 주세요.'); }
-  if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'login.live.com' || !parsed.pathname.toLowerCase().includes('oauth20_desktop.srf')) {
-    throw new Error('Microsoft 로그인 완료 주소가 아닙니다. login.live.com으로 시작하는 마지막 주소를 붙여넣어 주세요.');
+  if (!raw) throw new Error('Microsoft 로그인 후 표시된 인증 코드를 입력해 주세요.');
+
+  // 전체 리디렉션 URL을 붙여넣은 경우도 그대로 지원합니다.
+  if (/^https?:\/\//i.test(raw)) {
+    let parsed;
+    try { parsed = new URL(raw); } catch { throw new Error('Microsoft 로그인 완료 주소 또는 인증 코드 형식을 확인해 주세요.'); }
+    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'login.live.com' || !parsed.pathname.toLowerCase().includes('oauth20_desktop.srf')) {
+      throw new Error('Microsoft 로그인 완료 주소가 아닙니다. 인증 코드만 입력해도 됩니다.');
+    }
+    const error = parsed.searchParams.get('error');
+    if (error) throw new Error(parsed.searchParams.get('error_description') || error);
+    const state = parsed.searchParams.get('state');
+    if (!state || state !== expectedState) throw new Error('인증 세션 확인에 실패했습니다. 다른 기기 로그인을 처음부터 다시 시작해 주세요.');
+    const code = parsed.searchParams.get('code');
+    if (!code) throw new Error('Microsoft 로그인 완료 주소에서 인증 코드를 찾지 못했습니다.');
+    return code;
   }
-  const error = parsed.searchParams.get('error');
-  if (error) throw new Error(parsed.searchParams.get('error_description') || error);
-  const state = parsed.searchParams.get('state');
-  if (!state || state !== expectedState) throw new Error('인증 세션 확인에 실패했습니다. 다른 기기 로그인을 처음부터 다시 시작해 주세요.');
-  const code = parsed.searchParams.get('code');
-  if (!code) throw new Error('인증 코드가 주소에 없습니다. Microsoft 로그인이 완료된 뒤의 마지막 주소를 복사해 주세요.');
-  return code;
+
+  // code=...&state=... 같은 쿼리 문자열을 붙여넣은 경우도 지원합니다.
+  if (/^(?:code|error)=/i.test(raw)) {
+    const params = new URLSearchParams(raw.replace(/^\?/, ''));
+    const error = params.get('error');
+    if (error) throw new Error(params.get('error_description') || error);
+    const state = params.get('state');
+    if (state && state !== expectedState) throw new Error('인증 세션 확인에 실패했습니다. 다른 기기 로그인을 다시 시작해 주세요.');
+    const code = params.get('code');
+    if (!code) throw new Error('인증 코드를 찾지 못했습니다.');
+    return code;
+  }
+
+  // 사용자가 code= 뒤의 값만 복사한 경우. 인증 코드는 일회용이며 세션 만료시간도 별도로 검증합니다.
+  const compact = raw.replace(/^code\s*[:=]\s*/i, '').trim();
+  if (compact.length < 16 || /\s/.test(compact)) {
+    throw new Error('인증 코드 형식이 올바르지 않습니다. code= 뒤의 값만 복사해서 입력해 주세요.');
+  }
+  return compact;
 }
-async function finishDeviceLogin(sessionId, completedUrl) {
+async function finishDeviceLogin(sessionId, authorizationCode) {
   const session = deviceLoginSessions.get(String(sessionId || ''));
   if (!session) throw new Error('인증 세션을 찾을 수 없습니다. 다시 시작해 주세요.');
   try {
     if (session.cancelled) throw new Error('DEVICE_LOGIN_CANCELLED');
     if (Date.now() >= session.expiresAt) throw new Error('인증 시간이 만료되었습니다. 다시 시도해 주세요.');
-    const code = parseCompletedMicrosoftRedirect(completedUrl, session.state);
+    const code = parseMicrosoftAuthorizationCode(authorizationCode, session.state);
     const tokenResult = await postForm('https://login.live.com/oauth20_token.srf', {
       client_id: DEVICE_LOGIN_CLIENT_ID,
       code,
@@ -730,8 +753,8 @@ ipcMain.handle('device-login-start', async () => {
     return { ok:true, sessionId:session.id, authUrl:session.authUrl, expiresAt:session.expiresAt };
   } catch (error) { return { ok:false, error:friendlyMicrosoftAuthError(error) }; }
 });
-ipcMain.handle('device-login-complete', async (_event, sessionId, completedUrl) => {
-  try { return await finishDeviceLogin(sessionId, completedUrl); }
+ipcMain.handle('device-login-complete', async (_event, sessionId, authorizationCode) => {
+  try { return await finishDeviceLogin(sessionId, authorizationCode); }
   catch (error) {
     if (String(error?.message || '') === 'DEVICE_LOGIN_CANCELLED') return { ok:false, cancelled:true };
     return { ok:false, error:friendlyMicrosoftAuthError(error) };

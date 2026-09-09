@@ -207,30 +207,31 @@
       <p class="login-choice-note">학교나 공용 PC에서 로그인 창이 막히면 다른 기기에서 로그인 기능을 시험해 볼 수 있습니다.</p>
       <div class="login-choice-list">
         <button class="login-method" id="loginOnThisPcBtn" type="button"><span class="login-method-icon">▣</span><span><strong>이 PC에서 로그인</strong><small>기존 Microsoft 로그인 창을 사용합니다.</small></span><i>→</i></button>
-        <button class="login-method beta" id="loginOnOtherDeviceBtn" type="button"><span class="login-method-icon">⌁</span><span><strong>휴대폰에서 로그인 <em>BETA 2</em></strong><small>로그인 링크를 휴대폰으로 보내 Microsoft 계정을 인증합니다.</small></span><i>→</i></button>
+        <button class="login-method beta" id="loginOnOtherDeviceBtn" type="button"><span class="login-method-icon">⌁</span><span><strong>휴대폰에서 로그인 <em>BETA 3</em></strong><small>로그인 링크를 휴대폰으로 보내 Microsoft 계정을 인증합니다.</small></span><i>→</i></button>
       </div>
     </div>
   </div>
 
   <div class="modal hidden" id="deviceLoginModal">
     <div class="modal-card device-login-card">
-      <div class="modal-head"><div><span class="setting-label">OTHER DEVICE LOGIN · BETA 2</span><h2>휴대폰에서 로그인</h2></div></div>
-      <p class="device-login-guide">아래 Microsoft 로그인 링크를 휴대폰이나 다른 PC로 보내 로그인하세요. 로그인이 끝난 뒤 브라우저 주소창의 <b>마지막 주소 전체</b>를 복사해서 EasyCraft에 붙여넣으면 됩니다.</p>
+      <div class="modal-head"><div><span class="setting-label">OTHER DEVICE LOGIN · BETA 3</span><h2>인증 코드로 로그인</h2></div></div>
+      <p class="device-login-guide">아래 Microsoft 로그인 링크를 휴대폰이나 다른 PC로 보내 로그인하세요. 로그인이 끝나면 마지막 주소에서 <b>code= 뒤의 인증 코드</b>만 복사해 EasyCraft에 입력하세요. 전체 주소를 붙여넣어도 자동으로 코드를 찾아냅니다.</p>
       <div class="device-login-url"><span>Microsoft 로그인 링크</span><b id="deviceLoginUrlText">로그인 링크 준비 중…</b></div>
       <div class="device-link-actions">
         <button class="mini-action" id="deviceLoginCopyBtn" type="button" disabled>링크 복사</button>
         <button class="mini-action" id="deviceLoginOpenBtn" type="button" disabled>이 PC에서 열기</button>
       </div>
       <label class="device-result-field">
-        <span>휴대폰 로그인 후 마지막 주소</span>
-        <textarea id="deviceLoginResultUrl" rows="3" placeholder="https://login.live.com/oauth20_desktop.srf?code=... 주소 전체를 붙여넣으세요."></textarea>
+        <span>Microsoft 인증 코드</span>
+        <input id="deviceLoginResultCode" type="text" autocomplete="off" spellcheck="false" placeholder="code= 뒤의 인증 코드를 입력하세요" />
+        <small>예: 마지막 주소가 ...?code=M.R3_BAY...&state=... 라면 M.R3_BAY... 부분만 입력합니다.</small>
       </label>
       <div class="device-login-state"><i class="device-spinner"></i><span id="deviceLoginStatus">Microsoft 로그인 링크를 준비하고 있습니다…</span></div>
       <div class="modal-actions split">
         <button class="btn subtle" id="deviceLoginCancelBtn" type="button">취소</button>
         <div><button class="btn primary" id="deviceLoginCompleteBtn" type="button" disabled>인증 완료</button></div>
       </div>
-      <p class="beta-footnote">Beta 2 · 비밀번호는 EasyCraft에 입력하지 않습니다. Microsoft 페이지에서만 로그인하며, EasyCraft에는 로그인 완료 주소만 붙여넣습니다.</p>
+      <p class="beta-footnote">Beta 3 · 비밀번호는 EasyCraft에 입력하지 않습니다. Microsoft 페이지에서만 로그인하며, EasyCraft에는 일회용 인증 코드만 입력합니다.</p>
     </div>
   </div>
 

@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
   loginMicrosoft: () => ipcRenderer.invoke('login-microsoft'),
   startDeviceLogin: () => ipcRenderer.invoke('device-login-start'),
-  completeDeviceLogin: (sessionId, completedUrl) => ipcRenderer.invoke('device-login-complete', sessionId, completedUrl),
+  completeDeviceLogin: (sessionId, authorizationCode) => ipcRenderer.invoke('device-login-complete', sessionId, authorizationCode),
   cancelDeviceLogin: sessionId => ipcRenderer.invoke('device-login-cancel', sessionId),
   openDeviceLoginUrl: url => ipcRenderer.invoke('device-login-open-url', url),
   copyDeviceLoginLink: url => ipcRenderer.invoke('device-login-copy-link', url),

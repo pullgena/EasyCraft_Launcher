@@ -198,7 +198,7 @@ async function startOtherDeviceLogin() {
   state.deviceLoginSessionId = null;
   state.deviceLoginUrl = '';
   $('#deviceLoginUrlText').textContent = '로그인 링크 준비 중…';
-  $('#deviceLoginResultUrl').value = '';
+  $('#deviceLoginResultCode').value = '';
   $('#deviceLoginCopyBtn').disabled = true;
   $('#deviceLoginOpenBtn').disabled = true;
   $('#deviceLoginCompleteBtn').disabled = true;
@@ -215,16 +215,16 @@ async function startOtherDeviceLogin() {
   $('#deviceLoginCopyBtn').disabled = !state.deviceLoginUrl;
   $('#deviceLoginOpenBtn').disabled = !state.deviceLoginUrl;
   $('#deviceLoginCompleteBtn').disabled = false;
-  setDeviceLoginStatus('링크를 휴대폰으로 보내 로그인한 뒤, 마지막 주소를 아래에 붙여넣어 주세요.');
+  setDeviceLoginStatus('휴대폰에서 로그인한 뒤 주소의 code= 다음에 있는 인증 코드만 아래에 입력해 주세요. 전체 주소를 붙여넣어도 됩니다.');
 }
 async function completeOtherDeviceLogin() {
   const sessionId = state.deviceLoginSessionId;
   if (!sessionId) return setDeviceLoginStatus('로그인 세션이 없습니다. 다시 시작해 주세요.', 'error');
-  const completedUrl = $('#deviceLoginResultUrl').value.trim();
-  if (!completedUrl) return setDeviceLoginStatus('휴대폰 브라우저의 마지막 주소 전체를 붙여넣어 주세요.', 'error');
+  const authorizationCode = $('#deviceLoginResultCode').value.trim();
+  if (!authorizationCode) return setDeviceLoginStatus('Microsoft 로그인 후 받은 인증 코드를 입력해 주세요.', 'error');
   $('#deviceLoginCompleteBtn').disabled = true;
   setDeviceLoginStatus('Microsoft 및 Minecraft 계정을 확인하고 있습니다…');
-  const result = await api.completeDeviceLogin(sessionId, completedUrl);
+  const result = await api.completeDeviceLogin(sessionId, authorizationCode);
   if (!result?.ok) {
     $('#deviceLoginCompleteBtn').disabled = false;
     if (result?.cancelled) return;
@@ -671,7 +671,7 @@ $('#deviceLoginCancelBtn').addEventListener('click',cancelDeviceLogin);
 $('#deviceLoginCopyBtn').addEventListener('click',async()=>{const r=await api.copyDeviceLoginLink(state.deviceLoginUrl);toast(r?.ok?'로그인 링크를 복사했습니다.':(r?.error||'링크를 복사하지 못했습니다.'),!r?.ok);});
 $('#deviceLoginOpenBtn').addEventListener('click',async()=>{const r=await api.openDeviceLoginUrl(state.deviceLoginUrl);if(!r?.ok)toast(r?.error||'로그인 페이지를 열지 못했습니다.',true);});
 $('#deviceLoginCompleteBtn').addEventListener('click',completeOtherDeviceLogin);
-$('#deviceLoginResultUrl').addEventListener('input',()=>{$('#deviceLoginCompleteBtn').disabled=!state.deviceLoginSessionId;});
+$('#deviceLoginResultCode').addEventListener('input',()=>{$('#deviceLoginCompleteBtn').disabled=!state.deviceLoginSessionId;});
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
 async function openSelectedInstanceFolder(){
   const i=currentInstance();
