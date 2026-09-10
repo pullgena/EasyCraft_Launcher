@@ -31,3 +31,8 @@
 - `node --check src/minecraft-worker.js`: PASS
 - Startup-order smoke check now uses statement order rather than LF-only exact text, so Windows/CRLF GitHub checkouts do not fail falsely.
 
+
+
+## BuildFix2
+- Replaced fragile startup-block parser with whitespace/CRLF-tolerant regex assertions.
+- Verified smoke test passes on LF and CRLF line endings.
