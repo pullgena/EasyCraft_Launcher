@@ -1,11 +1,15 @@
 # Changelog
 
-## 0.4.13-beta.8.1
+## v0.4.13
 
-- 설정 화면의 Microsoft Client ID 입력/저장 UI를 완전히 제거했습니다.
-- Microsoft Client ID는 개발자가 빌드할 때만 주입하도록 변경했습니다.
-- GitHub Actions Secret `EASYCRAFT_MS_CLIENT_ID`를 지원합니다.
-- 로컬 빌드용 `SET_MICROSOFT_CLIENT_ID.bat`을 추가했습니다.
-- 기존 사용자 config에 남아 있는 `microsoftClientId` 값은 더 이상 사용하지 않습니다.
-- 시스템 브라우저 + localhost PKCE 로그인 구조는 그대로 유지합니다.
-- Client Secret은 계속 사용하지 않습니다.
+- EasyCraft 계정 동기화 및 Account Vault 적용
+- Weird Host + ngrok HTTPS 터널 계정 서버 연동
+- Microsoft/Minecraft 연결 정보 암호화 보관
+- 로그인 초기화 및 버튼 무반응 문제 수정
+- 계정 서버 오류와 Microsoft 인증 오류 분리
+- 시작 화면 업데이트 확인 무한 대기 방지
+- 네트워크 요청 타임아웃 및 복구 처리 강화
+- 기존 Modrinth/인스턴스/실행/로그 기능 유지
+- electron-updater 자동 업데이트 유지
+- GitHub v0.4.13 Release에 EXE + blockmap + latest.yml 자동 업로드
+- 정확한 `v0.4.13` 태그에서만 정식 Release 빌드 실행
