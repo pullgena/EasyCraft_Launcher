@@ -1,4 +1,5 @@
 # Changelog
+- GitHub Actions smoke test가 Windows CRLF 줄바꿈에서도 오탐 없이 시작 순서를 검사하도록 수정했습니다.
 
 ## v0.4.14
 

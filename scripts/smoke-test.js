@@ -120,7 +120,25 @@ for (const phrase of [
   if (!renderer.includes(phrase)) fail(`v0.4.14 updater message is missing: ${phrase}`);
 }
 if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.14');
-if (!main.includes('await createWindow();\n  initAutoUpdater();')) fail('window must be created before updater/background startup work');
+// Startup-order check: compare actual positions instead of an exact newline/indentation string.
+// This keeps the test valid on both LF and CRLF checkouts (GitHub Windows runners may normalize line endings).
+const readyMatch = main.match(/app\.whenReady\(\)\.then\(async\s*\(\)\s*=>\s*\{([\s\S]*?)\n\}\);/);
+if (!readyMatch) {
+  fail('app.whenReady startup block could not be found');
+} else {
+  const startup = readyMatch[1];
+  const createPos = startup.indexOf('await createWindow();');
+  const updaterPos = startup.indexOf('initAutoUpdater();');
+  const cleanupPos = startup.indexOf('cleanupOldLogs().catch(() => {});');
+  const accountPos = startup.indexOf("loadSavedAccount().then(summary => send('account-changed', summary)).catch(() => {});");
+  if (createPos < 0) fail('startup must create the main window');
+  if (updaterPos < 0) fail('startup must initialize auto updater');
+  if (cleanupPos < 0) fail('startup background log cleanup is missing');
+  if (accountPos < 0) fail('startup background account loading is missing');
+  if (createPos >= 0 && updaterPos >= 0 && createPos > updaterPos) fail('window must be created before updater startup work');
+  if (createPos >= 0 && cleanupPos >= 0 && createPos > cleanupPos) fail('window must be created before background log cleanup');
+  if (createPos >= 0 && accountPos >= 0 && createPos > accountPos) fail('window must be created before background account loading');
+}
 if (!main.includes("autoUpdater.autoDownload = false")) fail('updates must not auto-download before user approval');
 if (!main.includes("autoUpdater.disableDifferentialDownload = false")) fail('NSIS differential update must stay enabled');
 if (!pkg.build?.electronLanguages || !pkg.build.electronLanguages.includes('ko')) fail('Electron locale trimming is missing');

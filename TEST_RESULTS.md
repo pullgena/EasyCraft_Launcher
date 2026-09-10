@@ -22,3 +22,12 @@
 - 사용자 EasyCraft 비밀번호 원문이 런처 소스에 포함되지 않음을 확인
 
 실제 Windows NSIS EXE 빌드는 이 실행 환경에서 npm 의존성을 내려받을 수 없어 수행하지 못했습니다. GitHub Actions에서 `v0.4.14` Release를 Publish하면 실제 Windows 빌드와 Release Asset 검증이 실행됩니다.
+## v0.4.14 build-fix verification
+
+- `npm run test:smoke`: PASS
+- `node --check src/main.js`: PASS
+- `node --check src/renderer.js`: PASS
+- `node --check src/preload.js`: PASS
+- `node --check src/minecraft-worker.js`: PASS
+- Startup-order smoke check now uses statement order rather than LF-only exact text, so Windows/CRLF GitHub checkouts do not fail falsely.
+
