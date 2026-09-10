@@ -5,6 +5,12 @@ EasyCraft Launcher 0.4.13 정식 버전 소스입니다.
 ## 계정 서버
 
 런처에는 다음 EasyCraft Account Server 주소가 기본 포함되어 있습니다.
+- 사용자 설정 화면에서 **Microsoft Client ID 항목 제거**
+- 사용자는 Client ID를 입력할 필요 없음
+- 개발자가 빌드 시 `EASYCRAFT_MS_CLIENT_ID`를 한 번 주입
+- Client Secret은 런처에 저장하거나 포함하지 않음
+- 기존 인증 사이트/EC 코드 방식은 사용하지 않음
+- Beta 6 시작 화면 무한 대기 수정과 Beta 7 로그인 버튼 수정 유지
 
 ```text
 https://waffle-gangway-actress.ngrok-free.dev
