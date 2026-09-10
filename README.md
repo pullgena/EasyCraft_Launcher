@@ -1,6 +1,6 @@
-# EasyCraft Launcher v0.4.14
+# EasyCraft Launcher v0.4.15
 
-EasyCraft Launcher **0.4.14 정식 버전** 소스입니다.
+EasyCraft Launcher **0.4.15 정식 버전** 소스입니다.
 
 ## 핵심 변경
 
@@ -30,13 +30,13 @@ https://waffle-gangway-actress.ngrok-free.dev
 GitHub Release 태그는 정확히 다음 값이어야 합니다.
 
 ```text
-v0.4.14
+v0.4.15
 ```
 
 Release를 Publish하면 Windows 빌드 Workflow가 실행되고 다음 자동 업데이트 파일을 같은 Release Assets에 업로드합니다.
 
 ```text
-EasyCraft-Launcher-Setup-0.4.14.exe
-EasyCraft-Launcher-Setup-0.4.14.exe.blockmap
+EasyCraft-Launcher-Setup-0.4.15.exe
+EasyCraft-Launcher-Setup-0.4.15.exe.blockmap
 latest.yml
 ```

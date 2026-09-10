@@ -172,19 +172,41 @@
 
   <div class="modal hidden" id="launcherLoginModal">
     <div class="modal-card launcher-login-card">
-      <div class="modal-head"><div><span class="setting-label">EASYCRAFT ACCOUNT</span><h2>EasyCraft 로그인</h2></div><button class="close-btn" data-close="launcherLoginModal">×</button></div>
-      <p class="launcher-login-copy">Microsoft 비밀번호가 아니라 EasyCraft 전용 계정으로 로그인합니다.</p>
-      <label for="launcherAccountId">ID</label>
-      <input class="input" id="launcherAccountId" autocomplete="username" spellcheck="false" placeholder="EasyCraft ID" />
-      <label for="launcherAccountPassword">비밀번호</label>
-      <input class="input" id="launcherAccountPassword" type="password" autocomplete="current-password" placeholder="EasyCraft 비밀번호" />
-      <p class="launcher-login-status" id="launcherLoginStatus">집에서 한 번 연결해 두면 학교 PC에서는 EasyCraft 계정 로그인만으로 Minecraft 계정을 불러옵니다.</p>
+      <div class="modal-head launcher-login-head"><div><span class="setting-label">EASYCRAFT ACCOUNT</span><h2>EasyCraft 로그인</h2></div><button class="close-btn" data-close="launcherLoginModal">×</button></div>
+      <section class="launcher-login-hero">
+        <div class="launcher-login-orb-wrap">
+          <div class="launcher-login-orb">✦</div>
+        </div>
+        <div class="launcher-login-hero-copy">
+          <strong>EasyCraft Account Access</strong>
+          <p>EasyCraft 전용 계정으로 로그인합니다.</p>
+        </div>
+      </section>
+      <div class="launcher-login-panels">
+        <div class="launcher-login-panel">
+          <span>간편 로그인</span>
+          <strong>런처 계정만 입력</strong>
+          <small>필요한 기능을 한 번에 불러올 수 있도록 정리된 로그인 방식입니다.</small>
+        </div>
+        <div class="launcher-login-panel">
+          <span>안전한 보관</span>
+          <strong>계정 정보 보호</strong>
+          <small>EasyCraft가 로그인 상태를 안전하게 유지하고 다음 실행 때 빠르게 복구합니다.</small>
+        </div>
+      </div>
+      <div class="launcher-login-form">
+        <label for="launcherAccountId">ID</label>
+        <input class="input" id="launcherAccountId" autocomplete="username" spellcheck="false" placeholder="EasyCraft ID" />
+        <label for="launcherAccountPassword">비밀번호</label>
+        <input class="input" id="launcherAccountPassword" type="password" autocomplete="current-password" placeholder="EasyCraft 비밀번호" />
+      </div>
+      <p class="launcher-login-status" id="launcherLoginStatus"></p>
       <div class="minecraft-link-box hidden" id="minecraftLinkBox">
         <strong>Microsoft Minecraft 계정 연결이 필요합니다.</strong>
-        <span>Microsoft 로그인이 허용된 집 PC 등에서 처음 한 번만 연결하세요. 학교 PC에서는 Microsoft 로그인 화면 없이 EasyCraft 계정으로 동기화를 시도합니다.</span>
+        <span>Microsoft 계정 연결이 필요한 경우 이 버튼으로 다시 연결할 수 있습니다.</span>
         <button class="btn primary" id="minecraftLinkBtn" type="button">Microsoft Minecraft 계정 연결</button>
       </div>
-      <div class="modal-actions"><button class="btn subtle" id="launcherLoginCancelBtn" type="button">취소</button><button class="btn primary" id="launcherLoginConfirmBtn" type="button">로그인</button></div>
+      <div class="modal-actions launcher-login-actions"><button class="btn subtle" id="launcherLoginCancelBtn" type="button">취소</button><button class="btn primary" id="launcherLoginConfirmBtn" type="button">로그인</button></div>
     </div>
   </div>
 

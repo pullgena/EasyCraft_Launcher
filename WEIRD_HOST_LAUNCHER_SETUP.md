@@ -1,4 +1,4 @@
-# Weird Host / ngrok — EasyCraft v0.4.14
+# Weird Host / ngrok — EasyCraft v0.4.15
 
 런처에는 다음 계정 서버 도메인이 이미 포함되어 있습니다.
 

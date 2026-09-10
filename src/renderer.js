@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.14',
+  appVersion: '0.4.15',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -189,7 +189,8 @@ function setLauncherLoginBusy(busy, text='로그인 중…') {
 function login() {
   if (state.account || state.accountLoginBusy) return;
   $('#launcherAccountPassword').value = '';
-  $('#launcherLoginStatus').textContent = '집에서 한 번 연결해 두면 학교 PC에서는 EasyCraft 계정 로그인만으로 Minecraft 계정을 불러옵니다.';
+  $('#launcherLoginStatus').textContent = '';
+  $('#launcherLoginStatus').classList.remove('error');
   $('#launcherLoginStatus').classList.remove('error');
   $('#minecraftLinkBox').classList.add('hidden');
   $('#launcherLoginConfirmBtn').classList.remove('hidden');
@@ -750,7 +751,7 @@ $('#editVersion').addEventListener('change',()=>syncEditLoaderVersion($('#editLo
 $('#checkInstanceVersionsBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const el=$('#instanceVersionHint');el.textContent='최신 버전을 확인하고 있습니다…';const r=await api.instanceVersionStatus(id);if(!r.ok){el.textContent=`확인 실패: ${r.error||'알 수 없는 오류'}`;return;}const parts=[];parts.push(r.minecraftUpdateAvailable?`Minecraft ${r.currentMinecraft} → ${r.latestMinecraft} 업데이트 가능`:`Minecraft ${r.currentMinecraft} 최신`);const inst=state.config.instances.find(i=>i.id===id);if(inst?.loader!=='vanilla')parts.push(r.currentLoader==='latest'?`${loaderLabel(inst.loader)}는 최신 자동 선택 중`:r.loaderUpdateAvailable?`${loaderLabel(inst.loader)} ${r.currentLoader} → ${r.latestLoader} 업데이트 가능`:`${loaderLabel(inst.loader)} ${r.currentLoader||'자동'} 최신`);el.textContent=parts.join(' · ');});
 $('#pickJavaBtn').addEventListener('click',async()=>{const r=await api.pickJava();if(r.ok)$('#editJavaPath').value=r.path||'';});
 $('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const r=await api.updateInstanceSettings(id,{name:$('#editName').value,version:$('#editVersion').value,loader:$('#editLoader').value,loaderVersion:$('#editLoader').value==='vanilla'?null:$('#editLoaderVersion').value,autoUpdateContent:$('#editAutoContent').checked,autoUpdateMinecraftVersion:$('#editAutoMinecraftVersion').checked,autoUpdateLoaderVersion:$('#editAutoLoaderVersion').checked,memory:{min:$('#editMinRam').value,max:$('#editMaxRam').value},screen:{width:$('#editWidth').value,height:$('#editHeight').value,fullscreen:$('#editFullscreen').checked},javaPath:$('#editJavaPath').value,jvmArgs:$('#editJvmArgs').value,gameArgs:$('#editGameArgs').value});if(!r.ok)return toast(r.error||'설정을 저장하지 못했습니다.',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스 설정을 저장했습니다.');});
-$('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!(await askConfirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`,'인스턴스 삭제')))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스를 삭제했습니다.');});
+$('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!(await askConfirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`,'인스턴스 삭제')))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.editingInstanceId=null;state.selectedContent.clear();state.detailItem=null;state.installedItems=[];state.searchResults=[];const boot=await api.bootstrap();state.config=boot.config||{instances:[],selectedInstanceId:null};if(boot.account!==undefined)state.account=boot.account;closeModal('instanceModal');await refreshCapabilities();renderAll();if(document.querySelector('#view-logs')?.classList.contains('active'))reloadLogs();if(document.querySelector('#view-content')?.classList.contains('active'))await renderContent();toast('인스턴스를 삭제했습니다.');});
 $('#accountPanel').addEventListener('click',login);$('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
 $('#launcherLoginConfirmBtn').addEventListener('click',submitLauncherLogin);$('#minecraftLinkBtn').addEventListener('click',linkMinecraftAccount);$('#launcherLoginCancelBtn').addEventListener('click',()=>closeModal('launcherLoginModal'));$('#launcherAccountPassword').addEventListener('keydown',e=>{if(e.key==='Enter')submitLauncherLogin();});$('#launcherAccountId').addEventListener('keydown',e=>{if(e.key==='Enter')$('#launcherAccountPassword').focus();});
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
@@ -801,11 +802,11 @@ api.onLauncherUpdateState(applyUpdateState);
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.14';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.15';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 
-    // v0.4.14: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
+    // v0.4.15: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
     api.fetchVersions().then(vr=>{state.versions=vr?.versions||[];state.latest=vr?.latest||'latest_release';renderAll();}).catch(error=>console.warn('Minecraft 버전 목록 갱신 실패',error));
     refreshCapabilities().then(()=>renderAll()).catch(()=>{});
   } catch(error) {

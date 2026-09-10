@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.14 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.15 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -247,7 +247,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
-  // v0.4.14: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
+  // v0.4.15: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
   await createWindow();
   initAutoUpdater();
   cleanupOldLogs().catch(() => {});
@@ -1224,10 +1224,11 @@ ipcMain.handle('delete-instance', async (_event, id) => {
   config.instances = config.instances.filter(i => i.id !== id);
   if (config.selectedInstanceId === id) config.selectedInstanceId = config.instances[0]?.id || null;
   await writeConfig(config);
-  // game/, mods/, saves/, loader files, Modrinth registry, logs까지 인스턴스 루트 전체 삭제
   preparedLaunchers.delete(id);
   await fsp.rm(instanceDir(id), { recursive: true, force: true });
-  return { ok: true, config };
+  await fsp.rm(launchReadyMarker(id), { force: true }).catch(() => {});
+  const freshConfig = await readConfig();
+  return { ok: true, config: freshConfig, deletedId: id };
 });
 ipcMain.handle('update-instance', async (_event, id, patch) => {
   const config = await readConfig();
@@ -2442,7 +2443,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.14 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.15 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

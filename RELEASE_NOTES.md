@@ -1,6 +1,6 @@
-# EasyCraft Launcher v0.4.14
+# EasyCraft Launcher v0.4.15
 
-새로운 EasyCraft Launcher **v0.4.14** 정식 버전이 출시되었습니다!
+새로운 EasyCraft Launcher **v0.4.15** 정식 버전이 출시되었습니다!
 
 ## 업데이트 내역
 
@@ -23,4 +23,4 @@
 
 ## 다운로드
 
-Windows 사용자는 Release의 **EasyCraft-Launcher-Setup-0.4.14.exe** 파일을 다운로드하세요.
+Windows 사용자는 Release의 **EasyCraft-Launcher-Setup-0.4.15.exe** 파일을 다운로드하세요.

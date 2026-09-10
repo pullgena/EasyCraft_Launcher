@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.14",
-  "description": "EasyCraft Launcher v0.4.14 - performance, updater UX, Fabric HUD release",
+  "version": "0.4.15",
+  "description": "EasyCraft Launcher v0.4.15 - performance, updater UX, Fabric HUD release",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
