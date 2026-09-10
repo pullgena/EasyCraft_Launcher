@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.13 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.14 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -247,12 +247,11 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
-  await cleanupOldLogs();
-  // 업데이트 상태를 창보다 먼저 준비해 Renderer가 초기 'idle' 상태에 갇히지 않게 합니다.
-  // 업데이트 서버 장애와 관계없이 창 생성은 계속 진행됩니다.
-  initAutoUpdater();
+  // v0.4.14: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
   await createWindow();
-  loadSavedAccount().then(summary => send('account-changed', summary));
+  initAutoUpdater();
+  cleanupOldLogs().catch(() => {});
+  loadSavedAccount().then(summary => send('account-changed', summary)).catch(() => {});
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
@@ -912,7 +911,7 @@ function easyCraftHudBlock() {
   return [
     '# >>> EASYCRAFT_LAUNCHER_HUD >>>',
     '==Section:BottomLeft,6,6,false==',
-    '&aEasyCraft Launcher&f로 실행 중',
+    '&aEasyCraft으로 실행됨',
     '# <<< EASYCRAFT_LAUNCHER_HUD <<<'
   ].join('\n');
 }
@@ -986,6 +985,22 @@ async function collectHudRuntimePlan(instance, projectId, seen = new Set(), plan
   plan.push({ project, version, file });
   return plan;
 }
+
+async function collectCompatibleEasyCraftHudPlan(instance) {
+  // CustomHud 본판은 많은 Fabric 버전을 지원하지만, 최신 Minecraft에서는
+  // 별도 포트 프로젝트가 먼저 대응되는 경우가 있다. 사용자가 버전을 바꿔도
+  // EasyCraft HUD 때문에 실행이 깨지지 않도록 호환 프로젝트를 순서대로 찾는다.
+  const candidates = ['customhud', 'customhud-ported'];
+  const errors = [];
+  for (const projectId of candidates) {
+    try {
+      return await collectHudRuntimePlan(instance, projectId, new Set(), []);
+    } catch (error) {
+      errors.push(`${projectId}: ${error?.message || error}`);
+    }
+  }
+  throw new Error(`Minecraft ${instance.version}용 EasyCraft Fabric HUD 구성요소를 찾지 못했습니다. ${errors.join(' / ')}`);
+}
 async function ensureMinecraftInGameHud(id, instance) {
   // 현재 검증 가능한 True in-game HUD 경로는 Fabric용 CustomHud이다.
   // Vanilla/Forge/NeoForge에서는 외부 오버레이로 속이지 않고 HUD 런타임만 정리한다.
@@ -995,7 +1010,21 @@ async function ensureMinecraftInGameHud(id, instance) {
   }
   await ensureInstanceFolders(id);
   const oldManifest = await readHudRuntimeManifest(id);
-  const plan = await collectHudRuntimePlan(instance, 'customhud');
+  // 이미 같은 Minecraft 버전에 맞는 EasyCraft HUD 런타임이 준비되어 있으면
+  // Modrinth 메타데이터를 다시 조회하지 않고 바로 재사용해 Fabric 실행을 빠르게 합니다.
+  if (oldManifest?.ready === true && oldManifest.loader === 'fabric' && oldManifest.minecraftVersion === instance.version) {
+    const modsDir = path.join(gameDir(id), 'mods');
+    const runtimeFiles = Array.isArray(oldManifest.files) ? oldManifest.files : [];
+    const present = await Promise.all(runtimeFiles.map(async item => {
+      if (!item?.fileName) return false;
+      try { await fsp.access(path.join(modsDir, path.basename(item.fileName))); return true; } catch { return false; }
+    }));
+    if (!runtimeFiles.length || present.every(Boolean)) {
+      await patchCustomHudProfile(id);
+      return { enabled: true, provider: 'EasyCraft HUD Runtime', cached: true };
+    }
+  }
+  const plan = await collectCompatibleEasyCraftHudPlan(instance);
   const newFiles = [];
   const modsDir = path.join(gameDir(id), 'mods');
   const keepNames = new Set();
@@ -1039,11 +1068,11 @@ async function ensureMinecraftInGameHud(id, instance) {
     await fsp.rm(path.join(modsDir, `${path.basename(old.fileName)}.disabled`), { force: true }).catch(() => {});
   }
   await writeHudRuntimeManifest(id, {
-    loader: 'fabric', minecraftVersion: instance.version, provider: 'CustomHud',
+    loader: 'fabric', minecraftVersion: instance.version, provider: 'EasyCraft HUD Runtime', ready: true,
     files: newFiles, updatedAt: new Date().toISOString()
   });
   await patchCustomHudProfile(id);
-  return { enabled: true, provider: 'CustomHud' };
+  return { enabled: true, provider: 'EasyCraft HUD Runtime' };
 }
 async function invalidateLoaderInstall(id) {
   // Minecraft 버전/로더 종류/로더 빌드가 바뀌면 이전 설치 결과를 재사용하지 않는다.
@@ -1327,7 +1356,7 @@ ipcMain.handle('list-content', async (_event, id, type) => {
   const byFile = new Map(registry.map(x => [x.fileName, x]));
   const internalHudFiles = type === 'mods' ? hudRuntimeFileNames(await readHudRuntimeManifest(id)) : new Set();
   const names = await fsp.readdir(folder);
-  return names.filter(name => {
+  const items = names.filter(name => {
     if (internalHudFiles.has(name)) return false;
     const raw = name.endsWith('.disabled') ? name.slice(0, -9) : name;
     return meta.extensions.includes(path.extname(raw).toLowerCase());
@@ -1341,14 +1370,35 @@ ipcMain.handle('list-content', async (_event, id, type) => {
       title: managed?.title || null,
       versionNumber: managed?.versionNumber || null,
       autoDependency: !!managed?.autoDependency,
+      internalSystem: false,
       iconUrl: managed?.iconUrl || null,
       projectType: managed?.projectType || meta.projectType,
       slug: managed?.slug || null,
       description: managed?.description || null
     };
-  }).sort((a, b) => (a.title || a.displayName).localeCompare(b.title || b.displayName));
+  });
+  if (type === 'mods') {
+    const { instance } = await getInstance(id);
+    if (instance?.loader === 'fabric') {
+      const hudManifest = await readHudRuntimeManifest(id);
+      items.unshift({
+        name: '__easycraft_hud__', displayName: 'EasyCraft HUD', enabled: true, managed: false,
+        projectId: null, title: 'EasyCraft HUD', versionNumber: app.getVersion(), autoDependency: false,
+        internalSystem: true, iconUrl: null, projectType: 'mod', slug: 'easycraft-hud',
+        description: hudManifest?.ready === true
+          ? 'EasyCraft으로 실행됨 문구를 표시하는 Fabric 전용 시스템 HUD입니다.'
+          : 'Fabric 실행 시 자동으로 준비되는 EasyCraft 시스템 HUD입니다.'
+      });
+    }
+  }
+  return items.sort((a, b) => {
+    if (a.internalSystem && !b.internalSystem) return -1;
+    if (!a.internalSystem && b.internalSystem) return 1;
+    return (a.title || a.displayName).localeCompare(b.title || b.displayName);
+  });
 });
 ipcMain.handle('toggle-content', async (_event, id, type, name) => {
+  if (type === 'mods' && String(name || '') === '__easycraft_hud__') return { ok: false, error: 'EasyCraft HUD는 런처가 자동으로 관리하는 시스템 모드입니다.' };
   const folder = targetFolder(id, type); const safe = path.basename(name);
   const from = path.join(folder, safe); const enabled = !safe.endsWith('.disabled');
   const newName = enabled ? `${safe}.disabled` : safe.slice(0, -9); const to = path.join(folder, newName);
@@ -1412,6 +1462,7 @@ async function uninstallManagedProject(id, projectId) {
   return { ok: true };
 }
 async function deleteContentEntry(id, type, name) {
+  if (type === 'mods' && String(name || '') === '__easycraft_hud__') return { ok: false, error: 'EasyCraft HUD는 삭제할 수 없는 시스템 모드입니다.' };
   const folder = targetFolder(id, type); const safe = path.basename(name);
   const registry = await readRegistry(id);
   const raw = safe.endsWith('.disabled') ? safe.slice(0, -9) : safe;
@@ -2391,7 +2442,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.13 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.14 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };
@@ -2402,7 +2453,7 @@ let launcherUpdateState = { state: 'idle', currentVersion: app.getVersion(), ava
 let autoUpdaterInstance = null;
 let launcherUpdateTimer = null;
 let updateRepository = null;
-const LAUNCHER_UPDATE_CHECK_TIMEOUT_MS = 8000;
+const LAUNCHER_UPDATE_CHECK_TIMEOUT_MS = 6500;
 
 function readBuildInfo() {
   try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')); }
@@ -2474,24 +2525,21 @@ async function checkForLauncherUpdate({ manual = false } = {}) {
     // electron-updater가 정상이라면 available/latest 이벤트가 먼저 상태를 바꿉니다.
     // 드물게 Promise만 끝나고 이벤트가 오지 않는 경우에도 시작 화면을 붙잡지 않습니다.
     if (launcherUpdateState.state === 'checking') {
-      setLauncherUpdateState({
-        state: 'error',
-        error: '업데이트 결과를 받지 못했습니다. EasyCraft는 계속 실행되며 설정에서 다시 확인할 수 있습니다.'
-      });
+      setLauncherUpdateState({ state: 'timeout', error: '응답하지 못했습니다. 나중에 다시 시도하세요.' });
     }
     return { ok: true };
   } catch (error) {
     const timedOut = /업데이트 서버 응답 시간이 초과/i.test(String(error?.message || error || ''));
     const message = timedOut
-      ? '업데이트 서버 응답이 늦어 확인을 건너뛰었습니다. EasyCraft는 계속 실행됩니다.'
+      ? '응답하지 못했습니다. 나중에 다시 시도하세요.'
       : friendlyUpdateError(error);
-    setLauncherUpdateState({ state: 'error', error: message });
+    setLauncherUpdateState({ state: timedOut ? 'timeout' : 'error', error: message });
     return { ok: false, error: message };
   }
 }
 function scheduleAutomaticUpdateChecks() {
   // 첫 화면이 뜬 직후 업데이트를 검사합니다. 새 버전이 있을 때만 선택 화면을 보여줍니다.
-  const first = setTimeout(() => checkForLauncherUpdate().catch(() => {}), 900);
+  const first = setTimeout(() => checkForLauncherUpdate().catch(() => {}), 350);
   first.unref?.();
 
   // 오래 켜 둔 경우 4시간마다 다시 확인합니다.
@@ -2522,13 +2570,15 @@ function initAutoUpdater() {
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false; // 사용자가 승인한 경우에만 앱에서 조용히 설치합니다.
     autoUpdater.allowPrerelease = false;
+    // NSIS blockmap이 있는 경우 electron-updater의 차등 다운로드를 사용합니다.
+    if ('disableDifferentialDownload' in autoUpdater) autoUpdater.disableDifferentialDownload = false;
 
     setLauncherUpdateState({ state: 'idle', repository: updateRepository, error: null });
     // checking-for-update is intentionally not forced into a popup in the renderer.
     autoUpdater.on('checking-for-update', () => setLauncherUpdateState({ state: 'checking', percent: 0, error: null }));
     autoUpdater.on('update-available', info2 => setLauncherUpdateState({ state: 'available', availableVersion: info2.version, percent: 0, error: null, startupPrompt: true, releaseUrl: releasePageUrl(info2.version) }));
     autoUpdater.on('update-not-available', () => setLauncherUpdateState({ state: 'latest', availableVersion: null, percent: 0, error: null, startupPrompt: false, releaseUrl: null }));
-    autoUpdater.on('download-progress', p => setLauncherUpdateState({ state: 'downloading', percent: Math.round(p.percent || 0), error: null }));
+    autoUpdater.on('download-progress', p => setLauncherUpdateState({ state: 'downloading', percent: Math.round(p.percent || 0), bytesPerSecond: Number(p.bytesPerSecond || 0), transferred: Number(p.transferred || 0), total: Number(p.total || 0), error: null }));
     autoUpdater.on('update-downloaded', info2 => setLauncherUpdateState({ state: 'downloaded', availableVersion: info2.version, percent: 100, error: null, releaseUrl: releasePageUrl(info2.version) }));
     autoUpdater.on('error', error => setLauncherUpdateState({ state: 'error', error: friendlyUpdateError(error) }));
 

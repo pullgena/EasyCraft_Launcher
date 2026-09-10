@@ -80,9 +80,9 @@ if (serverConfig.baseUrl !== 'https://waffle-gangway-actress.ngrok-free.dev') fa
 if (!main.includes("'ngrok-skip-browser-warning':'EasyCraft'")) fail('ngrok browser-warning bypass header is missing from account API requests');
 
 
-// v0.4.13 stable auto-update invariants.
+// v0.4.14 release / updater / Fabric HUD invariants.
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-if (pkg.version !== '0.4.13') fail('package version must be exactly 0.4.13');
+if (pkg.version !== '0.4.14') fail('package version must be exactly 0.4.14');
 if (pkg.dependencies?.['electron-updater'] !== '6.8.9') fail('electron-updater dependency changed unexpectedly');
 const githubPublisher = (pkg.build?.publish || []).find(p => p?.provider === 'github');
 if (!githubPublisher) fail('GitHub publish provider is missing');
@@ -100,11 +100,51 @@ for (const updaterInvariant of [
   if (!main.includes(updaterInvariant)) fail(`auto-update invariant missing: ${updaterInvariant}`);
 }
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'build-windows.yml'), 'utf8');
-if (!workflow.includes("github.event.release.tag_name == 'v0.4.13'")) fail('release workflow must require exact tag v0.4.13');
-for (const asset of ['EasyCraft-Launcher-Setup-0.4.13.exe', 'EasyCraft-Launcher-Setup-0.4.13.exe.blockmap', 'dist/latest.yml']) {
+if (!workflow.includes("github.event.release.tag_name == 'v0.4.14'")) fail('release workflow must require exact tag v0.4.14');
+for (const asset of ['EasyCraft-Launcher-Setup-0.4.14.exe', 'EasyCraft-Launcher-Setup-0.4.14.exe.blockmap', 'dist/latest.yml']) {
   if (!workflow.includes(asset)) fail(`release workflow is missing updater asset: ${asset}`);
 }
-if (!workflow.includes('gh release upload v0.4.13')) fail('release workflow does not upload updater files to v0.4.13');
+if (!workflow.includes('gh release upload v0.4.14')) fail('release workflow does not upload updater files to v0.4.14');
+
+
+
+// v0.4.14 non-blocking update UX.
+for (const id of ['updateToast', 'updateToastTitle', 'updateToastText', 'updateToastActionBtn']) {
+  if (!htmlIds.has(id)) fail(`v0.4.14 update toast UI is missing #${id}`);
+}
+for (const phrase of [
+  '최신버전입니다!',
+  '응답하지 못했습니다. 나중에 다시 시도하세요.',
+  '업데이트를 확인하고 있습니다...'
+]) {
+  if (!renderer.includes(phrase)) fail(`v0.4.14 updater message is missing: ${phrase}`);
+}
+if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.14');
+if (!main.includes('await createWindow();\n  initAutoUpdater();')) fail('window must be created before updater/background startup work');
+if (!main.includes("autoUpdater.autoDownload = false")) fail('updates must not auto-download before user approval');
+if (!main.includes("autoUpdater.disableDifferentialDownload = false")) fail('NSIS differential update must stay enabled');
+if (!pkg.build?.electronLanguages || !pkg.build.electronLanguages.includes('ko')) fail('Electron locale trimming is missing');
+if (!Array.isArray(pkg.build?.files) || !pkg.build.files.some(x => String(x).includes('**/*.map'))) fail('release package exclusions are missing');
+
+// Fabric-only EasyCraft system HUD.
+for (const required of [
+  'ensureMinecraftInGameHud(id, instance)',
+  "if (instance.loader !== 'fabric')",
+  'EasyCraft으로 실행됨',
+  "internalSystem: true",
+  "title: 'EasyCraft HUD'",
+  'patchCustomHudProfile(id)'
+]) {
+  if (!main.includes(required)) fail(`Fabric HUD invariant missing: ${required}`);
+}
+if (!renderer.includes('EasyCraft 시스템 모드 · Fabric 전용 · 자동 관리')) fail('locked EasyCraft HUD list item UI is missing');
+if (!renderer.includes("if(!item.internalSystem) row.querySelector('.installed-name')")) fail('EasyCraft HUD detail interaction is not blocked');
+if (!renderer.includes('!i.autoDependency&&!i.internalSystem')) fail('EasyCraft HUD bulk selection must be blocked');
+
+if (!main.includes("const candidates = ['customhud', 'customhud-ported']")) fail('EasyCraft HUD compatibility fallback for newer Fabric versions is missing');
+if (pkg.build?.nsis?.differentialPackage !== true) fail('NSIS differentialPackage optimization must be enabled');
+if (!fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8').includes('.update-toast{position:fixed;')) fail('update toast must stay fixed at the bottom center');
+
 
 const conflictMarkers = ['<<<<<<<', '=======', '>>>>>>>'];
 for (const [name, text] of [['renderer.js', renderer], ['preload.js', preload], ['main.js', main], ['index.html', html]]) {
@@ -112,5 +152,5 @@ for (const [name, text] of [['renderer.js', renderer], ['preload.js', preload], 
 }
 
 if (!process.exitCode) {
-  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.13 release + account-vault invariants checked.`);
+  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.14 updater + Fabric HUD + account-vault invariants checked.`);
 }

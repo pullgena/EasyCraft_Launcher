@@ -1,4 +1,4 @@
-name: Release v0.4.13 Windows EXE + Auto Update
+name: Release v0.4.14 Windows EXE + Auto Update
 
 on:
   release:
@@ -9,28 +9,28 @@ permissions:
 
 jobs:
   build:
-    # v와 0을 붙인 정확한 태그 v0.4.13에서만 정식 빌드합니다.
-    if: ${{ github.event.release.tag_name == 'v0.4.13' }}
+    # v와 0을 붙인 정확한 태그 v0.4.14에서만 정식 빌드합니다.
+    if: ${{ github.event.release.tag_name == 'v0.4.14' }}
     runs-on: windows-latest
 
     steps:
-      - name: Checkout v0.4.13 source
+      - name: Checkout v0.4.14 source
         uses: actions/checkout@v6
         with:
-          ref: v0.4.13
+          ref: v0.4.14
           fetch-depth: 0
 
       - name: Verify release tag and package version
         shell: pwsh
         run: |
           $tag = "${{ github.event.release.tag_name }}"
-          if ($tag -ne "v0.4.13") {
-            Write-Error "Release tag must be exactly v0.4.13"
+          if ($tag -ne "v0.4.14") {
+            Write-Error "Release tag must be exactly v0.4.14"
             exit 1
           }
           $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          if ($pkg.version -ne "0.4.13") {
-            Write-Error "package.json version must be exactly 0.4.13"
+          if ($pkg.version -ne "0.4.14") {
+            Write-Error "package.json version must be exactly 0.4.14"
             exit 1
           }
           Write-Host "Release tag/version OK: $tag / $($pkg.version)"
@@ -56,25 +56,25 @@ jobs:
       - name: Verify auto-update release assets
         run: node scripts/verify-release-assets.js
 
-      # 이미 사용자가 만든 v0.4.13 Release에 자동 업데이트 파일을 그대로 올립니다.
+      # 이미 사용자가 만든 v0.4.14 Release에 자동 업데이트 파일을 그대로 올립니다.
       # Release 본문(업데이트 내역)은 건드리지 않습니다.
-      - name: Upload EXE and auto-update files to v0.4.13 Release
+      - name: Upload EXE and auto-update files to v0.4.14 Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload v0.4.13 `
-            "dist/EasyCraft-Launcher-Setup-0.4.13.exe" `
-            "dist/EasyCraft-Launcher-Setup-0.4.13.exe.blockmap" `
+          gh release upload v0.4.14 `
+            "dist/EasyCraft-Launcher-Setup-0.4.14.exe" `
+            "dist/EasyCraft-Launcher-Setup-0.4.14.exe.blockmap" `
             "dist/latest.yml" `
             --clobber
 
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: EasyCraft-Launcher-v0.4.13-Windows-AutoUpdate
+          name: EasyCraft-Launcher-v0.4.14-Windows-AutoUpdate
           path: |
-            dist/EasyCraft-Launcher-Setup-0.4.13.exe
-            dist/EasyCraft-Launcher-Setup-0.4.13.exe.blockmap
+            dist/EasyCraft-Launcher-Setup-0.4.14.exe
+            dist/EasyCraft-Launcher-Setup-0.4.14.exe.blockmap
             dist/latest.yml
           if-no-files-found: error

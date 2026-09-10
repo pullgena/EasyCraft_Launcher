@@ -162,18 +162,6 @@
     </section>
   </div>
 
-  <div class="startup-gate" id="startupGate">
-    <div class="gate-card">
-      <div class="gate-logo"><img src="app-icon.png" alt="EasyCraft"></div>
-      <div id="gateChecking"><span class="kicker">EASYCRAFT UPDATE</span><h2>최신 버전을 확인하고 있습니다</h2><p>업데이트 서버가 느려도 잠시 후 EasyCraft가 자동으로 열립니다.</p><div class="loader-line"><span></span></div></div>
-      <div class="hidden" id="gateAvailable">
-        <span class="gate-badge">NEW VERSION</span><h2 id="gateUpdateTitle">EasyCraft 업데이트가 있습니다</h2><p id="gateUpdateDescription">최신 버전으로 업데이트하시겠어요?</p>
-        <div class="gate-progress hidden" id="gateProgressWrap"><span id="gateProgress"></span></div>
-        <div class="gate-actions"><button class="btn subtle" id="gateReleaseNotesBtn">업데이트 내역 보기</button><button class="btn subtle" id="updateLaterBtn">나중에</button><button class="btn primary" id="updateNowBtn">업데이트</button></div>
-      </div>
-    </div>
-  </div>
-
   <div class="launch-pop hidden" id="launchPop">
     <div class="launch-pop-head"><span class="pulse-dot"></span><strong id="launchPopTitle">Minecraft 준비 중</strong></div>
     <p id="launchPopText">필요한 파일을 확인하고 있습니다.</p>
@@ -256,6 +244,18 @@
       <p class="confirm-message uninstall-warning">EasyCraft Launcher를 삭제하면 마인크래프트의 월드, 모드등은 전부 삭제 됩니다!</p>
       <div class="modal-actions"><button class="btn danger" id="uninstallYesBtn">예</button><button class="btn subtle" id="uninstallNoBtn">아니요</button></div>
     </div>
+  </div>
+
+  <div class="update-toast hidden" id="updateToast" role="status" aria-live="polite">
+    <div class="update-toast-main">
+      <div class="update-toast-copy"><strong id="updateToastTitle">업데이트 확인 중</strong><span id="updateToastText">업데이트를 확인하고 있습니다...</span></div>
+      <div class="update-toast-actions">
+        <button class="btn subtle small hidden" id="updateToastNotesBtn" type="button">업데이트 내역</button>
+        <button class="btn subtle small hidden" id="updateToastLaterBtn" type="button">나중에</button>
+        <button class="btn primary small hidden" id="updateToastActionBtn" type="button">업데이트</button>
+      </div>
+    </div>
+    <div class="update-toast-progress hidden" id="updateToastProgressWrap"><span id="updateToastProgress"></span></div>
   </div>
 
   <div class="toast hidden" id="toast"></div>

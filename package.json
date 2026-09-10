@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.13",
-  "description": "EasyCraft Launcher v0.4.13 - stable release",
+  "version": "0.4.14",
+  "description": "EasyCraft Launcher v0.4.14 - performance, updater UX, Fabric HUD release",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
@@ -36,7 +36,11 @@
     "files": [
       "src/**/*",
       "package.json",
-      "node_modules/**/*"
+      "!src/**/*.map",
+      "!**/*.md",
+      "!**/*.map",
+      "!**/{test,tests,__tests__,docs,doc,example,examples}/**/*",
+      "!**/*.{ts,tsx}"
     ],
     "directories": {
       "buildResources": "build",
@@ -68,8 +72,14 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "EasyCraft Launcher",
-      "include": "build/installer.nsh"
-    }
+      "include": "build/installer.nsh",
+      "differentialPackage": true
+    },
+    "compression": "maximum",
+    "electronLanguages": [
+      "ko",
+      "en-US"
+    ]
   },
   "repository": {
     "type": "git",
