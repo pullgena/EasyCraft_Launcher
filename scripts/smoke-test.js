@@ -80,9 +80,9 @@ if (serverConfig.baseUrl !== 'https://waffle-gangway-actress.ngrok-free.dev') fa
 if (!main.includes("'ngrok-skip-browser-warning':'EasyCraft'")) fail('ngrok browser-warning bypass header is missing from account API requests');
 
 
-// v0.4.17 release / updater / Fabric HUD invariants.
+// v0.4.18 release / updater / Fabric HUD invariants.
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-if (pkg.version !== '0.4.17') fail('package version must be exactly 0.4.17');
+if (pkg.version !== '0.4.18') fail('package version must be exactly 0.4.18');
 if (pkg.dependencies?.['electron-updater'] !== '6.8.9') fail('electron-updater dependency changed unexpectedly');
 const githubPublisher = (pkg.build?.publish || []).find(p => p?.provider === 'github');
 if (!githubPublisher) fail('GitHub publish provider is missing');
@@ -100,27 +100,27 @@ for (const updaterInvariant of [
   if (!main.includes(updaterInvariant)) fail(`auto-update invariant missing: ${updaterInvariant}`);
 }
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'build-windows.yml'), 'utf8');
-if (!workflow.includes("github.event.release.tag_name == 'v0.4.17'")) fail('release workflow must require exact tag v0.4.17');
-for (const asset of ['EasyCraft-Launcher-Setup-0.4.17.exe', 'EasyCraft-Launcher-Setup-0.4.17.exe.blockmap', 'dist/latest.yml']) {
+if (!workflow.includes("github.event.release.tag_name == 'v0.4.18'")) fail('release workflow must require exact tag v0.4.18');
+for (const asset of ['EasyCraft-Launcher-Setup-0.4.18.exe', 'EasyCraft-Launcher-Setup-0.4.18.exe.blockmap', 'dist/latest.yml']) {
   if (!workflow.includes(asset)) fail(`release workflow is missing updater asset: ${asset}`);
 }
-if (!workflow.includes('gh release upload v0.4.17')) fail('release workflow does not upload updater files to v0.4.17');
+if (!workflow.includes('gh release upload v0.4.18')) fail('release workflow does not upload updater files to v0.4.18');
 
 
 
-// v0.4.17 non-blocking update UX.
+// v0.4.18 non-blocking update UX.
 for (const id of ['updateToast', 'updateToastTitle', 'updateToastText', 'updateToastActionBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.17 update toast UI is missing #${id}`);
+  if (!htmlIds.has(id)) fail(`v0.4.18 update toast UI is missing #${id}`);
 }
 for (const phrase of [
   '최신버전입니다!',
   '응답하지 못했습니다. 나중에 다시 시도하세요.',
   '업데이트를 확인하고 있습니다...'
 ]) {
-  if (!renderer.includes(phrase)) fail(`v0.4.17 updater message is missing: ${phrase}`);
+  if (!renderer.includes(phrase)) fail(`v0.4.18 updater message is missing: ${phrase}`);
 }
-if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.17');
-// v0.4.17 startup-order check.
+if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.18');
+// v0.4.18 startup-order check.
 // Use whitespace-tolerant regexes so GitHub Windows CRLF/formatting cannot create a false failure.
 if (!/await\s+createWindow\(\);\s*initAutoUpdater\(\);/.test(main)) {
   fail('startup order invalid: createWindow must run immediately before updater initialization');
@@ -154,9 +154,9 @@ if (!fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8').includes('.up
 
 
 
-// v0.4.17 direct Microsoft mode, legal documents, and generated intro.
+// v0.4.18 direct Microsoft mode, legal documents, and generated intro.
 for (const id of ['generatedIntro','directMicrosoftLoginBtn','legalModal','legalModalTitle','legalDocumentText','termsBtn','privacyBtn','thirdPartyBtn','accountDeletionBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.17 UI is missing #${id}`);
+  if (!htmlIds.has(id)) fail(`v0.4.18 UI is missing #${id}`);
 }
 for (const required of [
   "ipcMain.handle('login-direct-microsoft'",
@@ -166,13 +166,20 @@ for (const required of [
   "ipcMain.handle('read-legal-document'",
   "안녕하세요!"
 ]) {
-  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.17 feature invariant missing: ${required}`);
+  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.18 feature invariant missing: ${required}`);
 }
-if (!preload.includes('loginDirectMicrosoft') || !preload.includes('readLegalDocument')) fail('v0.4.17 preload APIs are missing');
+if (!preload.includes('loginDirectMicrosoft') || !preload.includes('readLegalDocument')) fail('v0.4.18 preload APIs are missing');
 if (!renderer.includes("directMicrosoftLogin()")) fail('direct Microsoft renderer flow is missing');
 if (!renderer.includes("startGeneratedIntro()")) fail('startup generated intro controller is missing');
-if (!fs.existsSync(path.join(root,'src','chatgpt-logo.png'))) fail('v0.4.17 ChatGPT logo intro asset is missing');
-if (!html.includes('src="chatgpt-logo.png"')) fail('v0.4.17 intro does not use the provided ChatGPT logo asset');
+if (!fs.existsSync(path.join(root,'src','app-icon.png'))) fail('v0.4.18 launcher icon intro asset is missing');
+if (!html.includes('src="app-icon.png"')) fail('v0.4.18 intro does not use the EasyCraft launcher icon');
+if (html.includes('chatgpt-logo.png')) fail('v0.4.18 intro must not reference the old ChatGPT logo asset');
+const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
+for (const cls of ['.direct-microsoft-button{','.login-legal-links{','.legal-modal-card{','.legal-document{']) {
+  if (!styles.includes(cls)) fail(`v0.4.18 login/legal UI style is missing: ${cls}`);
+}
+if (!styles.includes('.direct-microsoft-button small{')) fail('direct Microsoft helper text styling is missing');
+if (!html.includes('EasyCraft 런처 아이콘 시작 인트로')) fail('v0.4.18 launcher icon intro aria label is missing');
 for (const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOTICE.txt','ACCOUNT_DELETION.txt']) {
   if (!fs.existsSync(path.join(root,'src','legal',legal))) fail(`legal document is missing: ${legal}`);
 }
@@ -183,5 +190,5 @@ for (const [name, text] of [['renderer.js', renderer], ['preload.js', preload], 
 }
 
 if (!process.exitCode) {
-  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.17 updater + Fabric HUD + direct Microsoft + legal + intro + account-vault invariants checked.`);
+  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.18 updater + Fabric HUD + direct Microsoft + legal + launcher-icon intro + login UI fixes + account-vault invariants checked.`);
 }

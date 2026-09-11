@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.17',
+  appVersion: '0.4.18',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -861,11 +861,11 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.17';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.18';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 
-    // v0.4.17: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
+    // v0.4.18: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
     api.fetchVersions().then(vr=>{state.versions=vr?.versions||[];state.latest=vr?.latest||'latest_release';renderAll();}).catch(error=>console.warn('Minecraft 버전 목록 갱신 실패',error));
     refreshCapabilities().then(()=>renderAll()).catch(()=>{});
   } catch(error) {

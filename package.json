@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.17",
-  "description": "EasyCraft Launcher v0.4.17 - refined ChatGPT logo intro, direct Microsoft start, legal notices, performance and updater improvements",
+  "version": "0.4.18",
+  "description": "EasyCraft Launcher v0.4.18 - launcher icon intro, login UI fixes, direct Microsoft start, legal notices, performance and updater improvements",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
