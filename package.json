@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.18",
-  "description": "EasyCraft Launcher v0.4.18 - launcher icon intro, login UI fixes, direct Microsoft start, legal notices, performance and updater improvements",
+  "version": "0.4.19",
+  "description": "EasyCraft Launcher v0.4.19 - Fabric HUD activation fix, system-lock tooltip, flicker-free Modrinth installs, direct Microsoft start and auto updates",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",

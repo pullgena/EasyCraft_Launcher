@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.18',
+  appVersion: '0.4.19',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -365,9 +365,10 @@ async function renderContent(checkUpdates=true) {
   const validKeys=new Set(state.installedItems.filter(i=>!i.autoDependency&&!i.internalSystem).map(contentSelectionKey));
   for(const key of [...state.selectedContent]) if(!validKeys.has(key)) state.selectedContent.delete(key);
   $('#installedCount').textContent=String(state.installedItems.length);
-  const list=$('#installedList'); list.innerHTML='';
+  const list=$('#installedList');
+  const installedFragment=document.createDocumentFragment();
   if(!state.installedItems.length){
-    list.innerHTML='<div class="empty">설치된 콘텐츠가 없습니다.</div>';
+    const empty=document.createElement('div'); empty.className='empty'; empty.textContent='설치된 콘텐츠가 없습니다.'; installedFragment.appendChild(empty);
   } else for(const item of state.installedItems){
     const key=contentSelectionKey(item);
     const selectable=!item.autoDependency&&!item.internalSystem;
@@ -375,7 +376,7 @@ async function renderContent(checkUpdates=true) {
     const row=document.createElement('div'); row.className=`installed-item${selected?' selected':''}${item.autoDependency?' dependency':''}${item.internalSystem?' system-item':''}`;
     row.dataset.key=key;
     const selector=item.internalSystem
-      ? '<span class="system-lock" title="EasyCraft가 자동으로 관리합니다.">🔒 시스템</span>'
+      ? '<span class="system-lock"><span class="system-lock-icon" data-tooltip="시스템 잠금" aria-label="시스템 잠금">🔒</span><span class="system-lock-label">시스템</span></span>'
       : selectable
         ? `<label class="item-check" title="선택"><input type="checkbox" class="select-installed" ${selected?'checked':''}></label>`
         : '<span class="dependency-lock" title="다른 모드가 필요로 하는 필수 의존성">필수</span>';
@@ -396,8 +397,9 @@ async function renderContent(checkUpdates=true) {
     row.querySelector('.toggle')?.addEventListener('click',async()=>{const r=await api.toggleContent(inst.id,state.contentType,item.name);if(!r.ok)toast(r.error||'변경 실패',true);await refreshCapabilities();await renderContent();});
     row.querySelector('.update')?.addEventListener('click',async e=>{e.target.disabled=true;e.target.textContent='확인 중…';const r=await api.modrinthUpdate(inst.id,item.projectId);if(!r.ok)toast(r.error||'업데이트 실패',true);else{if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');state.contentUpdateProjects.delete(item.projectId);}await refreshCapabilities();await renderContent();});
     row.querySelector('.remove')?.addEventListener('click',async()=>{if(item.autoDependency||item.internalSystem)return;const yes=await askConfirm(`${item.title||item.displayName}을(를) 삭제할까요?`,'콘텐츠 삭제');if(!yes)return;const r=await api.deleteContent(inst.id,state.contentType,item.name);if(!r.ok)return toast(r.error||'삭제 실패',true);state.selectedContent.delete(key);await refreshCapabilities();await renderContent();toast(r.retainedAsDependency?'다른 모드에서 필요해 파일은 의존성으로 유지했습니다.':'삭제했습니다.');});
-    list.appendChild(row);
+    installedFragment.appendChild(row);
   }
+  list.replaceChildren(installedFragment);
   syncSearchInstalledFlags();
   syncBulkControls();
   if(checkUpdates){
@@ -410,7 +412,20 @@ function selectedInstalledItems(){const keys=state.selectedContent;return state.
 function syncSearchInstalledFlags(){
   const installedProjects=new Set(state.installedItems.filter(i=>i.projectId).map(i=>i.projectId));
   for(const item of state.searchResults) item.installed=installedProjects.has(item.projectId);
-  if($('#view-content').classList.contains('active')) renderSearchResults();
+  if(!$('#view-content').classList.contains('active'))return;
+  // Installing a mod used to rebuild the entire Modrinth result list, which
+  // made icons/buttons visibly blink. Update only the affected install buttons.
+  const area=$('#searchResults');
+  const rows=[...area.querySelectorAll('.result-item[data-project-id]')];
+  if(!rows.length && state.searchResults.length){renderSearchResults();return;}
+  for(const row of rows){
+    const installed=installedProjects.has(row.dataset.projectId);
+    const button=row.querySelector('.mod-install-btn.install');
+    if(!button)continue;
+    button.disabled=installed;
+    button.classList.toggle('installed',installed);
+    button.textContent=installed?'✓ 설치됨':'＋ 설치';
+  }
 }
 function syncBulkControls(){
   const selectable=state.installedItems.filter(i=>!i.autoDependency&&!i.internalSystem);
@@ -612,33 +627,36 @@ async function installProject(projectId,title,button=null){
   const r=await api.modrinthInstall(inst.id,projectId,allow);
   if(!r.ok){toast(r.error||'설치하지 못했습니다.',true);if(button){button.disabled=false;button.textContent='설치';}return false;}
   if(r.config){state.config=r.config;renderAll();}
-  toast(`${r.title||title} 설치 완료`);state.selectedContent.clear();await refreshCapabilities();await renderContent();await searchContent();return true;
+  toast(`${r.title||title} 설치 완료`);state.selectedContent.clear();await refreshCapabilities();await renderContent(false);return true;
 }
 async function installFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;if(await installProject(d.projectId,d.title,button))await openContentDetail({...d,installed:true});}
 async function updateFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;button.disabled=true;button.textContent='업데이트 중…';const r=await api.modrinthUpdate(currentInstance().id,d.projectId);if(!r.ok){toast(r.error||'업데이트 실패',true);button.disabled=false;button.textContent='업데이트';return;}if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');state.contentUpdateProjects.delete(d.projectId);await refreshCapabilities();await renderContent();await openContentDetail(d);}
 async function deleteFromDetail(button){const d=state.detailItem;if(!d?.projectId)return;const yes=await askConfirm(`${d.title}을(를) 삭제할까요?`,'콘텐츠 삭제');if(!yes)return;button.disabled=true;const r=await api.modrinthUninstall(currentInstance().id,d.projectId);if(!r.ok){toast(r.error||'삭제 실패',true);button.disabled=false;return;}closeModal('contentDetailModal');await refreshCapabilities();await renderContent();await searchContent();toast('삭제했습니다.');}
 
 function renderSearchResults(){
-  const area=$('#searchResults');area.innerHTML='';
+  const area=$('#searchResults');
+  const fragment=document.createDocumentFragment();
   const query=currentSearchQuery();
   renderPagers();
   if(!state.searchResults.length){
-    area.innerHTML=`<div class="empty">${query?'검색 결과가 없습니다.':'표시할 인기 콘텐츠가 없습니다.'}</div>`;
+    const empty=document.createElement('div'); empty.className='empty'; empty.textContent=query?'검색 결과가 없습니다.':'표시할 인기 콘텐츠가 없습니다.';
+    fragment.appendChild(empty); area.replaceChildren(fragment);
     return;
   }
   for(const item of state.searchResults){
-    const row=document.createElement('div');row.className='result-item';
+    const row=document.createElement('div');row.className='result-item';row.dataset.projectId=item.projectId||'';
     row.innerHTML=`${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:'<div class="result-placeholder">◇</div>'}<div class="item-copy"><button class="content-name result-name" type="button">${esc(item.title)}</button><span>${esc(item.author||'')} · ${Number(item.downloads||0).toLocaleString()} 다운로드</span><span>${esc(item.description||'')}</span></div><button class="mod-install-btn ${item.installed?'installed':''} install" ${item.installed?'disabled':''}>${item.installed?'✓ 설치됨':'＋ 설치'}</button>`;
     row.querySelector('.result-name').addEventListener('click',()=>openContentDetail(item));
     row.querySelector('.install')?.addEventListener('click',async e=>{if(item.installed)return;const ok=await installProject(item.projectId,item.title,e.currentTarget);if(ok)item.installed=true;});
-    area.appendChild(row);
+    fragment.appendChild(row);
   }
   if(!query){
     const sentinel=document.createElement('div');
     sentinel.className=`infinite-sentinel${state.searchLoading?' loading':''}`;
     sentinel.id='popularSentinel';
     sentinel.textContent=state.popularHasMore?'아래로 내리면 더 불러옵니다':'인기 콘텐츠를 모두 불러왔습니다.';
-    area.appendChild(sentinel);
+    fragment.appendChild(sentinel);
+    area.replaceChildren(fragment);
     if(popularObserver)popularObserver.disconnect();
     if(state.popularHasMore){
       popularObserver=new IntersectionObserver(entries=>{
@@ -646,6 +664,8 @@ function renderSearchResults(){
       },{root:$('#view-content'),rootMargin:'280px 0px 280px 0px',threshold:0.01});
       popularObserver.observe(sentinel);
     }
+  } else {
+    area.replaceChildren(fragment);
   }
 }
 
@@ -861,11 +881,11 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.18';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.19';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 
-    // v0.4.18: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
+    // v0.4.19: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
     api.fetchVersions().then(vr=>{state.versions=vr?.versions||[];state.latest=vr?.latest||'latest_release';renderAll();}).catch(error=>console.warn('Minecraft 버전 목록 갱신 실패',error));
     refreshCapabilities().then(()=>renderAll()).catch(()=>{});
   } catch(error) {

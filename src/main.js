@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.18 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.19 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -212,7 +212,7 @@ async function loadSavedAccount() {
     accountRefreshedAt = Number(cached._easycraftRefreshedAt || 0);
   }
 
-  // v0.4.18: EasyCraft 계정 없이 Microsoft만 인증한 계정은
+  // v0.4.19: EasyCraft 계정 없이 Microsoft만 인증한 계정은
   // Weird Host 계정 서버를 거치지 않고 이 PC에서 직접 갱신합니다.
   if (cached && isDirectMicrosoftAccount(cached)) {
     try {
@@ -272,7 +272,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
-  // v0.4.18: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
+  // v0.4.19: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
   await createWindow();
   initAutoUpdater();
   cleanupOldLogs().catch(() => {});
@@ -784,7 +784,7 @@ async function startMinecraftAccountLink() {
   return { ok:true, account:summary };
 }
 async function startDirectMicrosoftLogin() {
-  // v0.4.18 비로그인 모드: EasyCraft 계정 서버 없이 Microsoft/Minecraft만 직접 인증합니다.
+  // v0.4.19 비로그인 모드: EasyCraft 계정 서버 없이 Microsoft/Minecraft만 직접 인증합니다.
   const account = await new Microsoft().getAuth();
   if (!account || account.error || !account.refresh_token) {
     throw new Error(friendlyMicrosoftAuthError(account || 'Microsoft 로그인 정보를 받지 못했습니다.'));
@@ -973,18 +973,81 @@ function easyCraftHudBlock() {
   ].join('\n');
 }
 async function patchCustomHudProfile(id) {
-  const dir = path.join(gameDir(id), 'config', 'custom-hud');
-  await fsp.mkdir(dir, { recursive: true });
-  for (const index of [1, 2, 3]) {
-    const profile = path.join(dir, `profile${index}.txt`);
-    let text = '';
-    try { text = await fsp.readFile(profile, 'utf8'); } catch {}
-    text = text.replace(/(?:^|\r?\n)# >>> EASYCRAFT_LAUNCHER_HUD >>>[\s\S]*?# <<< EASYCRAFT_LAUNCHER_HUD <<<(?:\r?\n|$)/g, '\n').trimEnd();
-    if (text) text += '\n\n';
-    text += `${easyCraftHudBlock()}\n`;
-    await fsp.writeFile(profile, text, 'utf8');
+  // CustomHud v3/v4 stores profiles under config/custom-hud/profiles and only
+  // renders the profile selected by config.json. the previous release wrote profile1~3.txt
+  // in the parent directory, so modern CustomHud never loaded EasyCraft's HUD.
+  const configDir = path.join(gameDir(id), 'config', 'custom-hud');
+  const profilesDir = path.join(configDir, 'profiles');
+  const configFile = path.join(configDir, 'config.json');
+  await fsp.mkdir(profilesDir, { recursive: true });
+
+  const stripEasyCraftBlock = text => String(text || '')
+    .replace(/(?:^|\r?\n)# >>> EASYCRAFT_LAUNCHER_HUD >>>[\s\S]*?# <<< EASYCRAFT_LAUNCHER_HUD <<<(?:\r?\n|$)/g, '\n')
+    .trimEnd();
+  const safeProfileName = value => {
+    const name = String(value || '').trim().replace(/[\\/:*?"<>|]/g, '').slice(0, 80);
+    return name || 'EasyCraft';
+  };
+
+  let config = null;
+  try {
+    const raw = await fsp.readFile(configFile, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed;
+  } catch {}
+
+  const modernConfig = Number(config?.configVersion || 0) >= 2;
+  let targetName = modernConfig && config?.enabled !== false
+    ? safeProfileName(config?.activeProfileName || config?.activeProfile)
+    : 'EasyCraft';
+  let targetFile = path.join(profilesDir, `${targetName}.txt`);
+
+  // If the config points to a profile that no longer exists, use a dedicated
+  // EasyCraft profile and make it active so the HUD is guaranteed to render.
+  if (targetName !== 'EasyCraft') {
+    try { await fsp.access(targetFile); }
+    catch { targetName = 'EasyCraft'; targetFile = path.join(profilesDir, 'EasyCraft.txt'); }
+  }
+
+  let profileText = '';
+  try { profileText = await fsp.readFile(targetFile, 'utf8'); } catch {}
+  profileText = stripEasyCraftBlock(profileText);
+  if (profileText) profileText += '\n\n';
+  profileText += `${easyCraftHudBlock()}\n`;
+  await fsp.writeFile(targetFile, profileText, 'utf8');
+
+  // Modern CustomHud: ensure the profile is enabled and selected. Preserve
+  // the user's existing profile/order whenever there is a valid active one.
+  if (!config || modernConfig) {
+    const next = config && typeof config === 'object' ? { ...config } : {};
+    next.configVersion = 3;
+    if (typeof next.debugMode !== 'boolean') next.debugMode = false;
+    next.enabled = true;
+    next.activeProfileName = targetName;
+    delete next.activeProfile;
+    if (!Array.isArray(next.profiles)) next.profiles = [];
+    if (!next.profiles.some(x => x && x.name === targetName)) {
+      next.profiles.push({ name: targetName, key: 'key.keyboard.unknown', cycle: false });
+    }
+    if (!Array.isArray(next.toggleBinds)) next.toggleBinds = [];
+    await fsp.writeFile(configFile, JSON.stringify(next, null, 2), 'utf8');
+  } else {
+    // Legacy CustomHud fallback (older MC branches): leave its old config
+    // schema intact, but force the global enabled flag and patch profile1.txt.
+    try {
+      config.enabled = true;
+      await fsp.writeFile(configFile, JSON.stringify(config, null, 2), 'utf8');
+    } catch {}
+    const legacyProfile = path.join(configDir, 'profile1.txt');
+    let legacyText = '';
+    try { legacyText = await fsp.readFile(legacyProfile, 'utf8'); } catch {}
+    legacyText = stripEasyCraftBlock(legacyText);
+    if (legacyText) legacyText += '\n\n';
+    legacyText += `${easyCraftHudBlock()}\n`;
+    await fsp.writeFile(legacyProfile, legacyText, 'utf8');
   }
 }
+
 function normalizedModToken(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -2530,7 +2593,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.18 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.19 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

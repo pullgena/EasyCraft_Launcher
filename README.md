@@ -1,30 +1,27 @@
-# EasyCraft Launcher v0.4.18
+# EasyCraft Launcher v0.4.19
 
-EasyCraft Launcher **v0.4.18 정식 버전** 소스입니다.
+EasyCraft Launcher **v0.4.19 정식 버전** 소스입니다.
 
-## v0.4.18 핵심 변경
+## v0.4.19 핵심 변경
 
-- 로그인 화면 하단 UI 깨짐 수정
-- `EasyCraft 계정 없이 시작` 버튼을 EasyCraft 디자인에 맞게 복구
-- 이용약관·개인정보처리방침 링크 스타일 및 반응형 레이아웃 수정
-- 법적 문서 팝업 가독성 개선
-- 시작 인트로를 ChatGPT 로고에서 **EasyCraft Launcher 아이콘**으로 변경
-- 런처 아이콘이 선으로 그려진 뒤 완성되는 시작 애니메이션
-- 인트로의 `안녕하세요!` 문구 유지
-- 기존 계정, 자동 업데이트, Fabric HUD, Modrinth 및 인스턴스 기능 유지
+- 시스템 HUD 자물쇠에 `시스템 잠금` hover 안내 추가
+- 모드 설치 시 콘텐츠 검색/추가 영역 깜빡임 수정
+- 모드 설치 상태를 필요한 버튼만 부분 갱신하도록 최적화
+- Fabric EasyCraft HUD 적용 문제 수정
+- CustomHud `profiles` 폴더 및 `config.json` 활성 프로필 처리 보강
 
-## Release 태그
+## 정식 Release
 
 정식 Windows 빌드는 아래 태그에서만 실행됩니다.
 
 ```text
-v0.4.18
+v0.4.19
 ```
 
 Release Assets:
 
 ```text
-EasyCraft-Launcher-Setup-0.4.18.exe
-EasyCraft-Launcher-Setup-0.4.18.exe.blockmap
+EasyCraft-Launcher-Setup-0.4.19.exe
+EasyCraft-Launcher-Setup-0.4.19.exe.blockmap
 latest.yml
 ```
