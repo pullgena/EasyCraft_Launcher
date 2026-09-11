@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.16 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.17 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -212,7 +212,7 @@ async function loadSavedAccount() {
     accountRefreshedAt = Number(cached._easycraftRefreshedAt || 0);
   }
 
-  // v0.4.16: EasyCraft 계정 없이 Microsoft만 인증한 계정은
+  // v0.4.17: EasyCraft 계정 없이 Microsoft만 인증한 계정은
   // Weird Host 계정 서버를 거치지 않고 이 PC에서 직접 갱신합니다.
   if (cached && isDirectMicrosoftAccount(cached)) {
     try {
@@ -272,7 +272,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
-  // v0.4.16: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
+  // v0.4.17: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
   await createWindow();
   initAutoUpdater();
   cleanupOldLogs().catch(() => {});
@@ -784,7 +784,7 @@ async function startMinecraftAccountLink() {
   return { ok:true, account:summary };
 }
 async function startDirectMicrosoftLogin() {
-  // v0.4.16 비로그인 모드: EasyCraft 계정 서버 없이 Microsoft/Minecraft만 직접 인증합니다.
+  // v0.4.17 비로그인 모드: EasyCraft 계정 서버 없이 Microsoft/Minecraft만 직접 인증합니다.
   const account = await new Microsoft().getAuth();
   if (!account || account.error || !account.refresh_token) {
     throw new Error(friendlyMicrosoftAuthError(account || 'Microsoft 로그인 정보를 받지 못했습니다.'));
@@ -2530,7 +2530,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.16 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.17 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

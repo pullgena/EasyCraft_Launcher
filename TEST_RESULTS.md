@@ -1,4 +1,4 @@
-# EasyCraft Launcher v0.4.16 테스트 결과
+# EasyCraft Launcher v0.4.17 테스트 결과
 
 검사일: 2026-09-11
 
@@ -14,14 +14,14 @@
 - Renderer가 참조하는 HTML ID 139개 연결 검사 ✅
 - 직접 이벤트 핸들러 14개 선언 검사 ✅
 - Preload → Main IPC 45개 연결 검사 ✅
-- `v0.4.16` Release 태그/버전 규칙 검사 ✅
+- `v0.4.17` Release 태그/버전 규칙 검사 ✅
 - 자동 업데이트 EXE / blockmap / latest.yml 구성 검사 ✅
 - Fabric EasyCraft HUD 보호 규칙 검사 ✅
 - EasyCraft 계정 SRP/암호화 보관함 코드 유지 검사 ✅
 - `EasyCraft 계정 없이 시작` 직접 Microsoft 로그인 경로 검사 ✅
 - 직접 로그인 계정의 독립 토큰 갱신 경로 검사 ✅
 - 이용약관/개인정보처리방침/제3자 고지/삭제 안내 파일 존재 검사 ✅
-- 시작 인트로 UI 및 `ChatGPT로 생성됨` 문구 검사 ✅
+- 시작 인트로 UI 및 `안녕하세요!` 문구 검사 ✅
 
 ## 실제 계정/Windows 실행 테스트가 필요한 부분
 

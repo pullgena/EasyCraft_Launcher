@@ -1,7 +1,7 @@
 # EasyCraft Launcher 이용약관
 
 시행일: 2026-09-11
-버전: v0.4.16
+버전: v0.4.17
 
 ## 1. 목적
 이 약관은 EasyCraft Launcher(이하 “EasyCraft”)를 이용할 때 필요한 기본 조건과 운영 원칙을 안내하기 위한 것입니다.

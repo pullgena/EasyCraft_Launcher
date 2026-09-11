@@ -1,16 +1,14 @@
-# EasyCraft Launcher v0.4.16
+# EasyCraft Launcher v0.4.17
 
-EasyCraft Launcher **v0.4.16 정식 버전** 소스입니다.
+EasyCraft Launcher **v0.4.17 정식 버전** 소스입니다.
 
-## v0.4.16 핵심 변경
+## v0.4.17 핵심 변경
 
-- EasyCraft 전용 계정 없이 Microsoft/Minecraft 계정만 인증해 시작할 수 있는 `EasyCraft 계정 없이 시작` 모드 추가
-- 직접 Microsoft 로그인과 EasyCraft 계정 동기화 로그인을 분리하여 각 방식에 맞게 토큰을 갱신
-- 시작 시 선이 그려지며 생성형 매듭 모양이 완성되고 `ChatGPT로 생성됨` 문구가 표시되는 인트로 추가
-- 인트로가 재생되는 동안에도 런처 초기화/업데이트 확인/로컬 정보 로딩이 뒤에서 계속 진행
-- 이용약관, 개인정보처리방침, 제3자 서비스 및 오픈소스 고지를 런처 설정에서 확인 가능
-- 로그인 화면에서도 이용약관/개인정보처리방침 바로 확인 가능
-- 로그인 상태 및 오류 안내 개선
+- 사용자가 제공한 ChatGPT 로고 형태를 그대로 사용하는 시작 인트로
+- 선이 그려지면서 로고가 서서히 완성되는 애니메이션
+- 로고 완성 후 `안녕하세요!` 표시 후 자동 페이드아웃
+- 인트로 동안 런처 초기화는 백그라운드에서 계속 진행
+
 
 ## 로그인 방식
 
@@ -35,13 +33,13 @@ https://waffle-gangway-actress.ngrok-free.dev
 GitHub Release 태그는 정확히 다음 값이어야 합니다.
 
 ```text
-v0.4.16
+v0.4.17
 ```
 
 Release를 Publish하면 다음 자동 업데이트 파일을 같은 Release Assets에 업로드합니다.
 
 ```text
-EasyCraft-Launcher-Setup-0.4.16.exe
-EasyCraft-Launcher-Setup-0.4.16.exe.blockmap
+EasyCraft-Launcher-Setup-0.4.17.exe
+EasyCraft-Launcher-Setup-0.4.17.exe.blockmap
 latest.yml
 ```
