@@ -1,38 +1,34 @@
-# EasyCraft Launcher v0.4.15 검사 결과
+# EasyCraft Launcher v0.4.16 테스트 결과
 
-확인한 항목:
+검사일: 2026-09-11
 
-- `src/main.js`, `src/renderer.js`, `src/preload.js` JavaScript 문법 검사 통과
-- UI ID 130개 참조 검사 통과
-- 직접 이벤트 핸들러 13개 검사 통과
-- Renderer → Main IPC invoke 43개 연결 검사 통과
-- EasyCraft Account Vault / SRP 인증 구조 유지 확인
-- 번들된 ngrok HTTPS 계정 서버 주소 확인
-- `v0.4.15` 태그 전용 GitHub Release Workflow 확인
-- Release Assets 이름 `EasyCraft-Launcher-Setup-0.4.15.exe`, `.blockmap`, `latest.yml` 검사 로직 확인
-- 전체 화면 업데이트 게이트 제거 확인
-- 가운데 아래 비차단 업데이트 토스트 UI 확인
-- `최신버전입니다!` / `응답하지 못했습니다. 나중에 다시 시도하세요.` 문구 검사
-- NSIS differential update 설정 및 `.blockmap` 사용 유지 확인
-- 배포 파일/locale 경량화 설정 확인
-- Fabric 전용 `EasyCraft HUD` 시스템 항목 확인
-- EasyCraft HUD 삭제/끄기/선택/상세보기 차단 확인
-- CustomHud 및 최신 버전용 포트 fallback 확인
-- Git 충돌 마커 검사 통과
-- 사용자 EasyCraft 비밀번호 원문이 런처 소스에 포함되지 않음을 확인
+## 통과한 정적/스모크 검사
 
-실제 Windows NSIS EXE 빌드는 이 실행 환경에서 npm 의존성을 내려받을 수 없어 수행하지 못했습니다. GitHub Actions에서 `v0.4.15` Release를 Publish하면 실제 Windows 빌드와 Release Asset 검증이 실행됩니다.
-## v0.4.15 build-fix verification
+- `node --check src/main.js` ✅
+- `node --check src/renderer.js` ✅
+- `node --check src/preload.js` ✅
+- `node --check src/minecraft-worker.js` ✅
+- `node --check scripts/smoke-test.js` ✅
+- `npm run test:smoke` ✅
+- HTML 중복 ID 검사 ✅
+- Renderer가 참조하는 HTML ID 139개 연결 검사 ✅
+- 직접 이벤트 핸들러 14개 선언 검사 ✅
+- Preload → Main IPC 45개 연결 검사 ✅
+- `v0.4.16` Release 태그/버전 규칙 검사 ✅
+- 자동 업데이트 EXE / blockmap / latest.yml 구성 검사 ✅
+- Fabric EasyCraft HUD 보호 규칙 검사 ✅
+- EasyCraft 계정 SRP/암호화 보관함 코드 유지 검사 ✅
+- `EasyCraft 계정 없이 시작` 직접 Microsoft 로그인 경로 검사 ✅
+- 직접 로그인 계정의 독립 토큰 갱신 경로 검사 ✅
+- 이용약관/개인정보처리방침/제3자 고지/삭제 안내 파일 존재 검사 ✅
+- 시작 인트로 UI 및 `ChatGPT로 생성됨` 문구 검사 ✅
 
-- `npm run test:smoke`: PASS
-- `node --check src/main.js`: PASS
-- `node --check src/renderer.js`: PASS
-- `node --check src/preload.js`: PASS
-- `node --check src/minecraft-worker.js`: PASS
-- Startup-order smoke check now uses statement order rather than LF-only exact text, so Windows/CRLF GitHub checkouts do not fail falsely.
+## 실제 계정/Windows 실행 테스트가 필요한 부분
 
+- 실제 Microsoft/Minecraft 계정 인증 완료 여부
+- 실제 GitHub Actions Windows NSIS 빌드
+- 설치본 자동 업데이트/차등 다운로드
+- Minecraft 각 버전별 Fabric HUD 표시
+- Windows 환경별 Electron safeStorage 동작
 
-
-## BuildFix2
-- Replaced fragile startup-block parser with whitespace/CRLF-tolerant regex assertions.
-- Verified smoke test passes on LF and CRLF line endings.
+이 항목들은 사용자 계정, Windows 빌드 환경 또는 실제 Minecraft 실행이 필요하므로 최종 Release 전에 실제 환경에서 한 번 확인하는 것을 권장합니다.

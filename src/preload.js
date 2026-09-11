@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
   loginLauncherAccount: (username, password) => ipcRenderer.invoke('login-launcher-account', username, password),
   linkMinecraftAccount: () => ipcRenderer.invoke('link-minecraft-account'),
+  loginDirectMicrosoft: () => ipcRenderer.invoke('login-direct-microsoft'),
+  readLegalDocument: kind => ipcRenderer.invoke('read-legal-document', kind),
   logout: () => ipcRenderer.invoke('logout'),
 
   createInstance: data => ipcRenderer.invoke('create-instance', data),

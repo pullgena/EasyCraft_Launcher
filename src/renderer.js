@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.15',
+  appVersion: '0.4.16',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -60,7 +60,13 @@ function switchView(view) {
 function renderAccount() {
   const account = state.account;
   $('#accountName').textContent = account?.name || '로그인 필요';
-  $('#accountSub').textContent = account ? (account.offlineCached ? '오프라인 캐시 사용 가능' : (account.launcherUsername ? `EasyCraft · ${account.launcherUsername}` : 'EasyCraft 계정')) : 'EasyCraft 계정';
+  $('#accountSub').textContent = account
+    ? (account.offlineCached
+        ? '오프라인 캐시 사용 가능'
+        : (account.authMode === 'microsoft-direct'
+            ? 'Microsoft 직접 로그인'
+            : (account.launcherUsername ? `EasyCraft · ${account.launcherUsername}` : 'Microsoft 계정')))
+    : 'EasyCraft 또는 Microsoft';
   const avatar=$('#accountAvatar');
   const faceUrl = account?.faceUrl || null;
   const overlayUrl = account?.faceOverlayUrl || null;
@@ -71,7 +77,9 @@ function renderAccount() {
   $('#railLogoutBtn').classList.toggle('hidden', !account);
   $('#settingsLoginBtn').classList.toggle('hidden', !!account);
   $('#settingsLogoutBtn').classList.toggle('hidden', !account);
-  $('#settingsAccountName').textContent = account ? `${account.name}${account.launcherUsername ? ` · EasyCraft ${account.launcherUsername}` : ''}${account.offlineCached ? ' · 오프라인 캐시' : ''}` : 'EasyCraft 계정에 로그인하지 않았습니다.';
+  $('#settingsAccountName').textContent = account
+    ? `${account.name}${account.authMode === 'microsoft-direct' ? ' · Microsoft 직접 로그인' : (account.launcherUsername ? ` · EasyCraft ${account.launcherUsername}` : '')}${account.offlineCached ? ' · 오프라인 캐시' : ''}`
+    : '로그인하지 않았습니다.';
 }
 function renderHero() {
   const inst = currentInstance();
@@ -179,7 +187,7 @@ function openInstanceModal(id = currentInstance()?.id) {
 
 function setLauncherLoginBusy(busy, text='로그인 중…') {
   state.accountLoginBusy = !!busy;
-  for (const id of ['launcherLoginConfirmBtn','minecraftLinkBtn']) {
+  for (const id of ['launcherLoginConfirmBtn','minecraftLinkBtn','directMicrosoftLoginBtn']) {
     const btn = $(`#${id}`);
     if (btn) btn.disabled = !!busy;
   }
@@ -267,6 +275,29 @@ async function linkMinecraftAccount() {
     setLauncherLoginBusy(false);
   }
 }
+async function directMicrosoftLogin() {
+  if (state.accountLoginBusy) return;
+  setLauncherLoginBusy(true,'로그인 중…');
+  $('#launcherLoginStatus').textContent='Microsoft Minecraft 계정 인증을 시작합니다. EasyCraft 계정 서버에는 저장하지 않습니다.';
+  $('#launcherLoginStatus').classList.remove('error');
+  try {
+    const r = await api.loginDirectMicrosoft();
+    if (!r?.ok) {
+      $('#launcherLoginStatus').textContent = r?.error || 'Microsoft 계정으로 로그인하지 못했습니다.';
+      $('#launcherLoginStatus').classList.add('error');
+      return;
+    }
+    state.account = r.account;
+    renderAccount();
+    closeModal('launcherLoginModal');
+    toast(`${r.account?.name || 'Minecraft 계정'} 로그인 완료`);
+  } catch (error) {
+    $('#launcherLoginStatus').textContent = error?.message || String(error);
+    $('#launcherLoginStatus').classList.add('error');
+  } finally {
+    setLauncherLoginBusy(false);
+  }
+}
 async function logout() {
   if (!state.account) return;
   try {
@@ -274,7 +305,7 @@ async function logout() {
     if (!r?.ok) return toast(r?.error || '로그아웃하지 못했습니다.', true);
     state.account = null;
     renderAccount();
-    toast('EasyCraft 계정에서 로그아웃했습니다.');
+    toast('로그아웃했습니다.');
   } catch (error) {
     toast(`로그아웃하지 못했습니다: ${error?.message || error}`, true);
   }
@@ -709,6 +740,25 @@ function applyUpdateState(u={}){
   if(u.state==='checking') state.updatePromptDismissed=false;
   state.update={...state.update,...u}; updateSettingsText(state.update); renderUpdateToast(state.update);
 }
+async function openLegalDocument(kind){
+  const titles={terms:'이용약관',privacy:'개인정보처리방침',thirdParty:'제3자 서비스 및 오픈소스 고지',accountDeletion:'계정 및 개인정보 삭제 안내'};
+  $('#legalModalTitle').textContent=titles[kind]||'EasyCraft 법적 고지';
+  $('#legalDocumentText').textContent='문서를 불러오는 중…';
+  openModal('legalModal');
+  try{
+    const r=await api.readLegalDocument(kind);
+    $('#legalDocumentText').textContent=r?.ok?r.text:(r?.error||'문서를 불러오지 못했습니다.');
+  }catch(error){
+    $('#legalDocumentText').textContent=`문서를 불러오지 못했습니다.\n${error?.message||error}`;
+  }
+}
+function startGeneratedIntro(){
+  const intro=$('#generatedIntro');
+  if(!intro)return;
+  setTimeout(()=>intro.classList.add('show-credit'),1750);
+  setTimeout(()=>intro.classList.add('leaving'),2750);
+  setTimeout(()=>intro.remove(),3350);
+}
 function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;}
 
 function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classList.contains('active')){
@@ -753,7 +803,7 @@ $('#pickJavaBtn').addEventListener('click',async()=>{const r=await api.pickJava(
 $('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const r=await api.updateInstanceSettings(id,{name:$('#editName').value,version:$('#editVersion').value,loader:$('#editLoader').value,loaderVersion:$('#editLoader').value==='vanilla'?null:$('#editLoaderVersion').value,autoUpdateContent:$('#editAutoContent').checked,autoUpdateMinecraftVersion:$('#editAutoMinecraftVersion').checked,autoUpdateLoaderVersion:$('#editAutoLoaderVersion').checked,memory:{min:$('#editMinRam').value,max:$('#editMaxRam').value},screen:{width:$('#editWidth').value,height:$('#editHeight').value,fullscreen:$('#editFullscreen').checked},javaPath:$('#editJavaPath').value,jvmArgs:$('#editJvmArgs').value,gameArgs:$('#editGameArgs').value});if(!r.ok)return toast(r.error||'설정을 저장하지 못했습니다.',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스 설정을 저장했습니다.');});
 $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!(await askConfirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`,'인스턴스 삭제')))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.editingInstanceId=null;state.selectedContent.clear();state.detailItem=null;state.installedItems=[];state.searchResults=[];const boot=await api.bootstrap();state.config=boot.config||{instances:[],selectedInstanceId:null};if(boot.account!==undefined)state.account=boot.account;closeModal('instanceModal');await refreshCapabilities();renderAll();if(document.querySelector('#view-logs')?.classList.contains('active'))reloadLogs();if(document.querySelector('#view-content')?.classList.contains('active'))await renderContent();toast('인스턴스를 삭제했습니다.');});
 $('#accountPanel').addEventListener('click',login);$('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
-$('#launcherLoginConfirmBtn').addEventListener('click',submitLauncherLogin);$('#minecraftLinkBtn').addEventListener('click',linkMinecraftAccount);$('#launcherLoginCancelBtn').addEventListener('click',()=>closeModal('launcherLoginModal'));$('#launcherAccountPassword').addEventListener('keydown',e=>{if(e.key==='Enter')submitLauncherLogin();});$('#launcherAccountId').addEventListener('keydown',e=>{if(e.key==='Enter')$('#launcherAccountPassword').focus();});
+$('#launcherLoginConfirmBtn').addEventListener('click',submitLauncherLogin);$('#minecraftLinkBtn').addEventListener('click',linkMinecraftAccount);$('#directMicrosoftLoginBtn').addEventListener('click',directMicrosoftLogin);$('#launcherLoginCancelBtn').addEventListener('click',()=>closeModal('launcherLoginModal'));$('#launcherAccountPassword').addEventListener('keydown',e=>{if(e.key==='Enter')submitLauncherLogin();});$('#launcherAccountId').addEventListener('keydown',e=>{if(e.key==='Enter')$('#launcherAccountPassword').focus();});
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
 async function openSelectedInstanceFolder(){
   const i=currentInstance();
@@ -779,6 +829,13 @@ $('#settingsUpdateActionBtn').addEventListener('click',async()=>{const action=$(
 $('#updateToastLaterBtn').addEventListener('click',()=>{state.updatePromptDismissed=true;$('#updateToast').classList.add('hidden');});
 $('#updateToastActionBtn').addEventListener('click',async()=>{const btn=$('#updateToastActionBtn');btn.disabled=true;if(state.update.state==='downloaded'){const r=await api.installLauncherUpdate();if(!r.ok){btn.disabled=false;toast(r.error||'업데이트 적용 실패',true);}}else{const r=await api.downloadLauncherUpdate();if(!r.ok){btn.disabled=false;toast(r.error||'업데이트 다운로드 실패',true);}}});
 
+$('#termsBtn').addEventListener('click',()=>openLegalDocument('terms'));
+$('#privacyBtn').addEventListener('click',()=>openLegalDocument('privacy'));
+$('#thirdPartyBtn').addEventListener('click',()=>openLegalDocument('thirdParty'));
+$('#accountDeletionBtn').addEventListener('click',()=>openLegalDocument('accountDeletion'));
+$$('[data-legal]').forEach(btn=>btn.addEventListener('click',()=>openLegalDocument(btn.dataset.legal)));
+$('#legalCloseBtn').addEventListener('click',()=>closeModal('legalModal'));
+
 $('#uninstallEasyCraftBtn').addEventListener('click',()=>openModal('uninstallModal'));
 $('#uninstallNoBtn').addEventListener('click',()=>closeModal('uninstallModal'));
 $('#uninstallYesBtn').addEventListener('click',async()=>{
@@ -800,13 +857,15 @@ api.onGameLog(appendLiveLog);
 api.onLauncherUpdateState(applyUpdateState);
 
 
+startGeneratedIntro();
+
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.15';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.16';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 
-    // v0.4.15: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
+    // v0.4.16: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
     api.fetchVersions().then(vr=>{state.versions=vr?.versions||[];state.latest=vr?.latest||'latest_release';renderAll();}).catch(error=>console.warn('Minecraft 버전 목록 갱신 실패',error));
     refreshCapabilities().then(()=>renderAll()).catch(()=>{});
   } catch(error) {

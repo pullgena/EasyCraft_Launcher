@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo EasyCraft v0.4.15 already includes the ngrok domain:
+echo EasyCraft v0.4.16 already includes the ngrok domain:
 echo https://waffle-gangway-actress.ngrok-free.dev
 echo.
 echo No setup is required. Press any key to re-apply the bundled domain.

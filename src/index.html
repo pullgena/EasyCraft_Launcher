@@ -7,6 +7,22 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div class="generated-intro" id="generatedIntro" aria-hidden="true">
+    <div class="generated-intro-inner">
+      <svg class="generated-knot" viewBox="0 0 256 256" role="img" aria-label="ChatGPT 스타일 생성 인트로">
+        <g class="generated-knot-lines">
+          <path class="generated-knot-line" style="--i:0" d="M128 34 C159 34 181 55 181 84 C181 105 169 123 151 134 L121 152 C104 162 82 157 69 142 C55 126 54 103 66 86 C76 72 92 64 109 64 L145 64" />
+          <path class="generated-knot-line" style="--i:1" transform="rotate(60 128 128)" d="M128 34 C159 34 181 55 181 84 C181 105 169 123 151 134 L121 152 C104 162 82 157 69 142 C55 126 54 103 66 86 C76 72 92 64 109 64 L145 64" />
+          <path class="generated-knot-line" style="--i:2" transform="rotate(120 128 128)" d="M128 34 C159 34 181 55 181 84 C181 105 169 123 151 134 L121 152 C104 162 82 157 69 142 C55 126 54 103 66 86 C76 72 92 64 109 64 L145 64" />
+          <path class="generated-knot-line" style="--i:3" transform="rotate(180 128 128)" d="M128 34 C159 34 181 55 181 84 C181 105 169 123 151 134 L121 152 C104 162 82 157 69 142 C55 126 54 103 66 86 C76 72 92 64 109 64 L145 64" />
+          <path class="generated-knot-line" style="--i:4" transform="rotate(240 128 128)" d="M128 34 C159 34 181 55 181 84 C181 105 169 123 151 134 L121 152 C104 162 82 157 69 142 C55 126 54 103 66 86 C76 72 92 64 109 64 L145 64" />
+          <path class="generated-knot-line" style="--i:5" transform="rotate(300 128 128)" d="M128 34 C159 34 181 55 181 84 C181 105 169 123 151 134 L121 152 C104 162 82 157 69 142 C55 126 54 103 66 86 C76 72 92 64 109 64 L145 64" />
+        </g>
+      </svg>
+      <div class="generated-intro-credit">ChatGPT로 생성됨</div>
+    </div>
+  </div>
+
   <div class="app">
     <aside class="rail">
       <div class="rail-logo"><img src="app-icon.png" alt="EasyCraft"></div>
@@ -128,7 +144,7 @@
           <div class="settings-stream">
             <section class="setting-row">
               <div class="setting-index">01</div>
-              <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">EasyCraft 계정에 로그인하지 않았습니다.</h3><p>EasyCraft 계정으로 로그인하면 집에서 연결한 Minecraft Java 계정을 학교 PC에서도 불러옵니다.</p></div>
+              <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">로그인하지 않았습니다.</h3><p>EasyCraft 계정으로 동기화하거나, EasyCraft 계정 없이 Microsoft Minecraft 계정만 인증해 사용할 수 있습니다.</p></div>
               <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn" type="button">로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn" type="button">로그아웃</button></div>
             </section>
             <section class="setting-row">
@@ -151,8 +167,13 @@
               <div class="setting-copy"><span>FILES</span><h3>인스턴스 파일</h3><p>현재 인스턴스의 Minecraft 폴더를 엽니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsOpenFolderBtn">폴더 열기</button></div>
             </section>
-            <section class="setting-row uninstall-row">
+            <section class="setting-row">
               <div class="setting-index">06</div>
+              <div class="setting-copy"><span>LEGAL</span><h3>약관 및 개인정보</h3><p>EasyCraft 이용약관, 개인정보처리방침과 제3자 서비스 고지를 확인합니다.</p></div>
+              <div class="setting-actions wrap"><button class="setting-button" id="termsBtn" type="button">이용약관</button><button class="setting-button" id="privacyBtn" type="button">개인정보처리방침</button><button class="setting-button" id="thirdPartyBtn" type="button">제3자 고지</button><button class="setting-button" id="accountDeletionBtn" type="button">삭제 안내</button></div>
+            </section>
+            <section class="setting-row uninstall-row">
+              <div class="setting-index">07</div>
               <div class="setting-copy"><span>UNINSTALL</span><h3>EasyCraft Launcher 삭제</h3><p>런처와 EasyCraft가 관리하는 Minecraft 데이터를 이 PC에서 제거합니다.</p></div>
               <div class="setting-actions"><button class="setting-button danger" id="uninstallEasyCraftBtn">EasyCraft 삭제</button></div>
             </section>
@@ -199,6 +220,19 @@
         <input class="input" id="launcherAccountId" autocomplete="username" spellcheck="false" placeholder="EasyCraft ID" />
         <label for="launcherAccountPassword">비밀번호</label>
         <input class="input" id="launcherAccountPassword" type="password" autocomplete="current-password" placeholder="EasyCraft 비밀번호" />
+      </div>
+      <div class="launcher-login-divider"><span>또는</span></div>
+      <button class="direct-microsoft-button" id="directMicrosoftLoginBtn" type="button">
+        <span class="direct-microsoft-mark">M</span>
+        <span><strong>EasyCraft 계정 없이 시작</strong><small>Microsoft Minecraft 계정만 인증하여 이 PC에서 사용합니다.</small></span>
+        <i>→</i>
+      </button>
+      <div class="login-legal-links">
+        <span>사용하기 전에</span>
+        <button type="button" data-legal="terms">이용약관</button>
+        <span>·</span>
+        <button type="button" data-legal="privacy">개인정보처리방침</button>
+        <span>을 확인해 주세요.</span>
       </div>
       <p class="launcher-login-status" id="launcherLoginStatus"></p>
       <div class="minecraft-link-box hidden" id="minecraftLinkBox">
@@ -265,6 +299,14 @@
       <div class="modal-head"><div><span class="setting-label">GOODBYE</span><h2>EasyCraft Launcher를 떠나시나요..?</h2></div></div>
       <p class="confirm-message uninstall-warning">EasyCraft Launcher를 삭제하면 마인크래프트의 월드, 모드등은 전부 삭제 됩니다!</p>
       <div class="modal-actions"><button class="btn danger" id="uninstallYesBtn">예</button><button class="btn subtle" id="uninstallNoBtn">아니요</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="legalModal">
+    <div class="modal-card legal-modal-card">
+      <div class="modal-head"><div><span class="setting-label">EASYCRAFT LEGAL</span><h2 id="legalModalTitle">이용약관</h2></div><button class="close-btn" data-close="legalModal">×</button></div>
+      <pre class="legal-document" id="legalDocumentText">문서를 불러오는 중…</pre>
+      <div class="modal-actions"><button class="btn primary" id="legalCloseBtn" type="button">확인</button></div>
     </div>
   </div>
 

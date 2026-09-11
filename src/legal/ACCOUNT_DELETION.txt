@@ -1,0 +1,13 @@
+# EasyCraft 계정 및 개인정보 삭제 안내
+
+## 현재 PC의 로그인 정보 삭제
+런처에서 `로그아웃`을 누르면 현재 PC에 저장된 EasyCraft 세션과 Minecraft 로그인 캐시를 삭제하도록 설계되어 있습니다.
+
+EasyCraft Launcher 자체를 제거하면서 EasyCraft가 관리하는 로컬 데이터까지 삭제하려면 설정의 `EasyCraft 삭제` 기능을 이용할 수 있습니다. 중요한 Minecraft 월드가 있다면 삭제 전에 반드시 별도로 백업하세요.
+
+## EasyCraft 계정 서버 데이터 삭제
+EasyCraft 계정 자체와 서버에 저장된 연결 보관함 삭제는 서버 운영자에게 요청해야 합니다.
+
+프로젝트 문의: https://github.com/pullgena/EasyCraft_Launcher/issues
+
+주의: 계정 ID, Microsoft 토큰, 비밀번호, 인증 코드 등 민감한 정보는 공개 Issue에 적지 마십시오. 공개 배포 전에는 비공개 계정 삭제 요청 채널을 별도로 마련하는 것을 권장합니다.

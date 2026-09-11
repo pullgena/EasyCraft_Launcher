@@ -1,0 +1,31 @@
+# 제3자 서비스 및 오픈소스 고지
+
+시행일: 2026-09-11
+
+## 비공식 서비스 고지
+EasyCraft Launcher는 독립적으로 제작된 비공식 서드파티 Minecraft 런처입니다.
+Microsoft, Mojang Studios, Minecraft, Modrinth, GitHub, ngrok, Weird Host 및 OpenAI의 공식 제품이나 제휴·승인 제품이 아닙니다.
+
+런처 시작 화면의 `ChatGPT로 생성됨` 문구와 생성형 매듭 애니메이션은 제작 과정에서 ChatGPT를 활용했다는 표시이며 OpenAI의 후원이나 공식 승인을 의미하지 않습니다.
+
+## 연결되는 주요 서비스
+- Microsoft / Xbox / Minecraft Services
+- Mojang / Minecraft 다운로드 및 프로필 서비스
+- Modrinth API
+- GitHub Releases
+- ngrok
+- Weird Host
+
+각 서비스의 상표, 저작권, 이용약관과 개인정보 정책은 해당 권리자에게 귀속됩니다.
+
+## 주요 오픈소스 구성요소
+EasyCraft는 빌드 시 다음과 같은 오픈소스 패키지를 포함하거나 사용할 수 있습니다.
+- Electron
+- electron-builder
+- electron-updater
+- minecraft-java-core
+- adm-zip
+
+정확한 패키지 버전과 의존성은 EasyCraft 소스의 `package.json` 및 설치된 패키지의 라이선스 파일을 기준으로 확인할 수 있습니다.
+
+EasyCraft 자체 소스에 별도 라이선스가 명시된 경우 해당 라이선스가 적용됩니다. 제3자 라이브러리에는 각 라이브러리의 개별 라이선스가 적용됩니다.

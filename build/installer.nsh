@@ -1,4 +1,4 @@
-; EasyCraft Launcher v0.4.15
+; EasyCraft Launcher v0.4.16
 ; User Minecraft data lives under AppData and MUST survive app updates.
 ; Data cleanup is performed only by the in-app confirmed uninstall flow.
 ; Keeping NSIS cleanup empty prevents updater/uninstaller ambiguity from deleting worlds during an update.

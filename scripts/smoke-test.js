@@ -80,9 +80,9 @@ if (serverConfig.baseUrl !== 'https://waffle-gangway-actress.ngrok-free.dev') fa
 if (!main.includes("'ngrok-skip-browser-warning':'EasyCraft'")) fail('ngrok browser-warning bypass header is missing from account API requests');
 
 
-// v0.4.15 release / updater / Fabric HUD invariants.
+// v0.4.16 release / updater / Fabric HUD invariants.
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-if (pkg.version !== '0.4.15') fail('package version must be exactly 0.4.15');
+if (pkg.version !== '0.4.16') fail('package version must be exactly 0.4.16');
 if (pkg.dependencies?.['electron-updater'] !== '6.8.9') fail('electron-updater dependency changed unexpectedly');
 const githubPublisher = (pkg.build?.publish || []).find(p => p?.provider === 'github');
 if (!githubPublisher) fail('GitHub publish provider is missing');
@@ -100,27 +100,27 @@ for (const updaterInvariant of [
   if (!main.includes(updaterInvariant)) fail(`auto-update invariant missing: ${updaterInvariant}`);
 }
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'build-windows.yml'), 'utf8');
-if (!workflow.includes("github.event.release.tag_name == 'v0.4.15'")) fail('release workflow must require exact tag v0.4.15');
-for (const asset of ['EasyCraft-Launcher-Setup-0.4.15.exe', 'EasyCraft-Launcher-Setup-0.4.15.exe.blockmap', 'dist/latest.yml']) {
+if (!workflow.includes("github.event.release.tag_name == 'v0.4.16'")) fail('release workflow must require exact tag v0.4.16');
+for (const asset of ['EasyCraft-Launcher-Setup-0.4.16.exe', 'EasyCraft-Launcher-Setup-0.4.16.exe.blockmap', 'dist/latest.yml']) {
   if (!workflow.includes(asset)) fail(`release workflow is missing updater asset: ${asset}`);
 }
-if (!workflow.includes('gh release upload v0.4.15')) fail('release workflow does not upload updater files to v0.4.15');
+if (!workflow.includes('gh release upload v0.4.16')) fail('release workflow does not upload updater files to v0.4.16');
 
 
 
-// v0.4.15 non-blocking update UX.
+// v0.4.16 non-blocking update UX.
 for (const id of ['updateToast', 'updateToastTitle', 'updateToastText', 'updateToastActionBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.15 update toast UI is missing #${id}`);
+  if (!htmlIds.has(id)) fail(`v0.4.16 update toast UI is missing #${id}`);
 }
 for (const phrase of [
   '최신버전입니다!',
   '응답하지 못했습니다. 나중에 다시 시도하세요.',
   '업데이트를 확인하고 있습니다...'
 ]) {
-  if (!renderer.includes(phrase)) fail(`v0.4.15 updater message is missing: ${phrase}`);
+  if (!renderer.includes(phrase)) fail(`v0.4.16 updater message is missing: ${phrase}`);
 }
-if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.15');
-// v0.4.15 startup-order check.
+if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.16');
+// v0.4.16 startup-order check.
 // Use whitespace-tolerant regexes so GitHub Windows CRLF/formatting cannot create a false failure.
 if (!/await\s+createWindow\(\);\s*initAutoUpdater\(\);/.test(main)) {
   fail('startup order invalid: createWindow must run immediately before updater initialization');
@@ -153,11 +153,33 @@ if (pkg.build?.nsis?.differentialPackage !== true) fail('NSIS differentialPackag
 if (!fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8').includes('.update-toast{position:fixed;')) fail('update toast must stay fixed at the bottom center');
 
 
+
+// v0.4.16 direct Microsoft mode, legal documents, and generated intro.
+for (const id of ['generatedIntro','directMicrosoftLoginBtn','legalModal','legalModalTitle','legalDocumentText','termsBtn','privacyBtn','thirdPartyBtn','accountDeletionBtn']) {
+  if (!htmlIds.has(id)) fail(`v0.4.16 UI is missing #${id}`);
+}
+for (const required of [
+  "ipcMain.handle('login-direct-microsoft'",
+  "startDirectMicrosoftLogin()",
+  "_easycraftAuthFlow = 'direct-microsoft-v1'",
+  "refreshDirectMicrosoftAccount(stored)",
+  "ipcMain.handle('read-legal-document'",
+  "ChatGPT로 생성됨"
+]) {
+  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.16 feature invariant missing: ${required}`);
+}
+if (!preload.includes('loginDirectMicrosoft') || !preload.includes('readLegalDocument')) fail('v0.4.16 preload APIs are missing');
+if (!renderer.includes("directMicrosoftLogin()")) fail('direct Microsoft renderer flow is missing');
+if (!renderer.includes("startGeneratedIntro()")) fail('startup generated intro controller is missing');
+for (const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOTICE.txt','ACCOUNT_DELETION.txt']) {
+  if (!fs.existsSync(path.join(root,'src','legal',legal))) fail(`legal document is missing: ${legal}`);
+}
+
 const conflictMarkers = ['<<<<<<<', '=======', '>>>>>>>'];
 for (const [name, text] of [['renderer.js', renderer], ['preload.js', preload], ['main.js', main], ['index.html', html]]) {
   if (conflictMarkers.some(marker => text.includes(marker))) fail(`${name} contains a Git conflict marker`);
 }
 
 if (!process.exitCode) {
-  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.15 updater + Fabric HUD + account-vault invariants checked.`);
+  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.16 updater + Fabric HUD + direct Microsoft + legal + intro + account-vault invariants checked.`);
 }

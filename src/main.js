@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.15 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.16 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -134,6 +134,7 @@ function send(channel, payload) {
 }
 function accountSummary(account) {
   if (!account || account.error) return null;
+  const directMicrosoft = account._easycraftAuthFlow === 'direct-microsoft-v1';
   return {
     name: account.name || account.username || account.profile?.name || 'Microsoft 계정',
     uuid: account.uuid || account.id || account.profile?.id || null,
@@ -141,8 +142,12 @@ function accountSummary(account) {
     faceUrl: account._easycraftFaceDataUrl || null,
     faceOverlayUrl: account._easycraftFaceOverlayDataUrl || null,
     offlineCached: !!account._easycraftOfflineCached,
-    launcherUsername: account._easycraftLauncherUsername || null
+    launcherUsername: account._easycraftLauncherUsername || null,
+    authMode: directMicrosoft ? 'microsoft-direct' : (account._easycraftLauncherUsername ? 'easycraft-account' : 'microsoft')
   };
+}
+function isDirectMicrosoftAccount(account) {
+  return !!account && account._easycraftAuthFlow === 'direct-microsoft-v1';
 }
 function isUsableCachedMicrosoftAccount(account) {
   if (!account || account.error || !account.access_token || !account.uuid || !account.name || !account.meta) return false;
@@ -207,6 +212,26 @@ async function loadSavedAccount() {
     accountRefreshedAt = Number(cached._easycraftRefreshedAt || 0);
   }
 
+  // v0.4.16: EasyCraft 계정 없이 Microsoft만 인증한 계정은
+  // Weird Host 계정 서버를 거치지 않고 이 PC에서 직접 갱신합니다.
+  if (cached && isDirectMicrosoftAccount(cached)) {
+    try {
+      const refreshed = await refreshDirectMicrosoftAccount(cached);
+      refreshed._easycraftSkinUrl = cached?._easycraftSkinUrl || null;
+      refreshed._easycraftFaceDataUrl = cached?._easycraftFaceDataUrl || null;
+      refreshed._easycraftFaceOverlayDataUrl = cached?._easycraftFaceOverlayDataUrl || null;
+      await writeSecureJson(accountPath(), refreshed);
+      currentAccount = refreshed;
+      accountRefreshedAt = Date.now();
+      setTimeout(() => refreshAccountVisual(refreshed).catch(() => {}), 50).unref?.();
+      return accountSummary(refreshed);
+    } catch {
+      cached._easycraftOfflineCached = true;
+      currentAccount = cached;
+      return accountSummary(cached);
+    }
+  }
+
   const session = await readLauncherSession();
   if (session?.sessionId && session?.sessionKeyB64 && session?.vaultKeyB64) {
     try {
@@ -247,7 +272,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
-  // v0.4.15: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
+  // v0.4.16: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
   await createWindow();
   initAutoUpdater();
   cleanupOldLogs().catch(() => {});
@@ -355,6 +380,19 @@ async function persistMicrosoftAccount(account) {
   setTimeout(() => refreshAccountVisual(account).catch(() => {}), 50).unref?.();
   send('account-changed', summary);
   return summary;
+}
+async function refreshDirectMicrosoftAccount(stored) {
+  const refreshed = await promiseWithTimeout(
+    new Microsoft().refresh(stored),
+    45000,
+    'Microsoft 로그인 갱신 시간이 초과되었습니다.'
+  );
+  if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'Microsoft 인증 갱신 실패');
+  refreshed._easycraftAuthFlow = 'direct-microsoft-v1';
+  refreshed._easycraftLauncherUsername = null;
+  refreshed._easycraftRefreshedAt = Date.now();
+  refreshed._easycraftOfflineCached = false;
+  return refreshed;
 }
 function normalizeAccountServerUrl(value) {
   const raw = String(value || '').trim().replace(/\/+$/, '');
@@ -745,6 +783,25 @@ async function startMinecraftAccountLink() {
   const summary = await persistMicrosoftAccount(account);
   return { ok:true, account:summary };
 }
+async function startDirectMicrosoftLogin() {
+  // v0.4.16 비로그인 모드: EasyCraft 계정 서버 없이 Microsoft/Minecraft만 직접 인증합니다.
+  const account = await new Microsoft().getAuth();
+  if (!account || account.error || !account.refresh_token) {
+    throw new Error(friendlyMicrosoftAuthError(account || 'Microsoft 로그인 정보를 받지 못했습니다.'));
+  }
+  // 기존 EasyCraft 계정 세션이 있으면 서버 로그아웃을 best-effort로 요청한 뒤 로컬 세션을 비웁니다.
+  const previousSession = await readLauncherSession();
+  if (previousSession?.sessionId) {
+    await accountServerSigned('/api/logout', { method:'POST', body:{}, session:previousSession, timeoutMs:8000 }).catch(() => {});
+  }
+  await clearLauncherSession().catch(() => {});
+  account._easycraftAuthFlow = 'direct-microsoft-v1';
+  account._easycraftLauncherUsername = null;
+  account._easycraftRefreshedAt = Date.now();
+  account._easycraftOfflineCached = false;
+  const summary = await persistMicrosoftAccount(account);
+  return { ok:true, account:summary };
+}
 async function logoutLauncherAccount() {
   const session = await readLauncherSession();
   if (session?.sessionId) {
@@ -1079,6 +1136,22 @@ async function invalidateLoaderInstall(id) {
   await fsp.rm(path.join(gameDir(id), 'loader'), { recursive:true, force:true }).catch(() => {});
 }
 
+const LEGAL_DOCUMENTS = Object.freeze({
+  terms: 'TERMS_OF_SERVICE.txt',
+  privacy: 'PRIVACY_POLICY.txt',
+  thirdParty: 'THIRD_PARTY_NOTICE.txt',
+  accountDeletion: 'ACCOUNT_DELETION.txt'
+});
+async function readLegalDocument(kind) {
+  const name = LEGAL_DOCUMENTS[String(kind || '')];
+  if (!name) throw new Error('지원하지 않는 법적 문서입니다.');
+  return fsp.readFile(path.join(__dirname, 'legal', name), 'utf8');
+}
+ipcMain.handle('read-legal-document', async (_event, kind) => {
+  try { return { ok:true, text:await readLegalDocument(kind) }; }
+  catch (error) { return { ok:false, error:error.message }; }
+});
+
 ipcMain.handle('bootstrap', async () => {
   const config = await readConfig();
   return {
@@ -1189,6 +1262,18 @@ ipcMain.handle('link-minecraft-account', async () => {
   } catch (error) {
     const message = friendlyMicrosoftAuthError(error);
     send('status', { text:`Minecraft 계정 연결 실패: ${message}`, kind:'error' });
+    return { ok:false, error:message };
+  }
+});
+ipcMain.handle('login-direct-microsoft', async () => {
+  try {
+    send('status', { text:'Microsoft Minecraft 계정으로 로그인하고 있습니다…', kind:'info' });
+    const result = await startDirectMicrosoftLogin();
+    send('status', { text:`${result.account?.name || 'Minecraft 계정'} 로그인 완료`, kind:'success' });
+    return result;
+  } catch (error) {
+    const message = friendlyMicrosoftAuthError(error);
+    send('status', { text:`Microsoft 로그인 실패: ${message}`, kind:'error' });
     return { ok:false, error:message };
   }
 });
@@ -2115,8 +2200,10 @@ async function ensureFreshAccountForLaunch() {
   if (!currentAccount._easycraftOfflineCached && Date.now() - stamped < 35 * 60 * 1000) return { ok:true, cached:false };
   try {
     const previous = currentAccount;
-    const refreshed = await refreshAccountFromVault();
-    if (!refreshed || refreshed.error) throw new Error(refreshed?.error || 'EasyCraft 계정 동기화 실패');
+    const refreshed = isDirectMicrosoftAccount(previous)
+      ? await refreshDirectMicrosoftAccount(previous)
+      : await refreshAccountFromVault();
+    if (!refreshed || refreshed.error) throw new Error(refreshed?.error || (isDirectMicrosoftAccount(previous) ? 'Microsoft 인증 갱신 실패' : 'EasyCraft 계정 동기화 실패'));
     refreshed._easycraftSkinUrl = previous._easycraftSkinUrl || null;
     refreshed._easycraftFaceDataUrl = previous._easycraftFaceDataUrl || null;
     refreshed._easycraftFaceOverlayDataUrl = previous._easycraftFaceOverlayDataUrl || null;
@@ -2365,11 +2452,11 @@ ipcMain.handle('launch-game', async (_event, id) => {
   let summary = accountSummary(currentAccount);
   if (!summary || !currentAccount) summary = await loadSavedAccount();
   if (!summary || !currentAccount) {
-    return { ok:false, needLogin:true, error:'Minecraft Java Edition을 사용하려면 EasyCraft 계정으로 로그인해 주세요. 처음 한 번 Microsoft Minecraft 계정을 연결하면 다른 PC에서도 같은 EasyCraft 계정으로 불러올 수 있습니다.' };
+    return { ok:false, needLogin:true, error:'Minecraft Java Edition을 사용하려면 EasyCraft 계정으로 로그인하거나 "EasyCraft 계정 없이 시작"에서 Microsoft Minecraft 계정을 인증해 주세요.' };
   }
   const authState = await ensureFreshAccountForLaunch();
   const offlineFallback = !authState.ok && authState.cached;
-  if (!authState.ok && !offlineFallback) return { ok:false, needLogin:true, error:'EasyCraft 계정에서 Minecraft 로그인 정보를 확인할 수 없습니다. 다시 로그인해 주세요.' };
+  if (!authState.ok && !offlineFallback) return { ok:false, needLogin:true, error:isDirectMicrosoftAccount(currentAccount) ? 'Microsoft Minecraft 로그인 정보를 갱신할 수 없습니다. 다시 로그인해 주세요.' : 'EasyCraft 계정에서 Minecraft 로그인 정보를 확인할 수 없습니다. 다시 로그인해 주세요.' };
   if (offlineFallback && rawInstance.loader !== 'vanilla') {
     return { ok:false, error:'오프라인 실행은 Vanilla 인스턴스에서만 지원합니다. Fabric / Forge / NeoForge / Quilt는 온라인 계정 확인 후 실행해 주세요.' };
   }
@@ -2443,7 +2530,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.15 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.16 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };
