@@ -1,10 +1,7 @@
-# Weird Host / ngrok — EasyCraft v0.4.19
+# EasyCraft v0.4.20 Weird Host 연결
 
-런처에는 다음 계정 서버 도메인이 이미 포함되어 있습니다.
+런처에 포함된 계정 서버 주소:
+`https://waffle-gangway-actress.ngrok-free.dev`
 
-```text
-https://waffle-gangway-actress.ngrok-free.dev
-```
-
-따라서 일반 빌드에서는 `SET_NGROK_TUNNEL.bat` 실행이 필요하지 않습니다.
-Weird Host의 Account Server와 ngrok 터널이 실행 중인지 `/health` 엔드포인트로 확인하면 됩니다.
+v0.4.20 Launcher를 사용하기 전에 Weird Host의 EasyCraft Account Server도 v0.4.20으로 업데이트해야 합니다.
+브라우저에서 `/health`를 열었을 때 `server-microsoft-refresh-v1` capability가 보여야 합니다.

@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.19 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.20 (Minecraft launcher; encrypted EasyCraft account vault sync; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -149,8 +149,12 @@ function accountSummary(account) {
 function isDirectMicrosoftAccount(account) {
   return !!account && account._easycraftAuthFlow === 'direct-microsoft-v1';
 }
+function isServerBrokeredAccount(account) {
+  return !!account && account._easycraftAuthFlow === 'account-server-v3';
+}
 function isUsableCachedMicrosoftAccount(account) {
   if (!account || account.error || !account.access_token || !account.uuid || !account.name || !account.meta) return false;
+  if (isServerBrokeredAccount(account)) return true;
   return !!account.refresh_token;
 }
 
@@ -212,7 +216,7 @@ async function loadSavedAccount() {
     accountRefreshedAt = Number(cached._easycraftRefreshedAt || 0);
   }
 
-  // v0.4.19: EasyCraft 계정 없이 Microsoft만 인증한 계정은
+  // v0.4.20: EasyCraft 계정 없이 Microsoft만 인증한 계정은
   // Weird Host 계정 서버를 거치지 않고 이 PC에서 직접 갱신합니다.
   if (cached && isDirectMicrosoftAccount(cached)) {
     try {
@@ -235,7 +239,7 @@ async function loadSavedAccount() {
   const session = await readLauncherSession();
   if (session?.sessionId && session?.sessionKeyB64 && session?.vaultKeyB64) {
     try {
-      const refreshed = await refreshAccountFromVault(session);
+      const refreshed = await refreshEasyCraftAccount(session);
       refreshed._easycraftSkinUrl = cached?._easycraftSkinUrl || null;
       refreshed._easycraftFaceDataUrl = cached?._easycraftFaceDataUrl || null;
       refreshed._easycraftFaceOverlayDataUrl = cached?._easycraftFaceOverlayDataUrl || null;
@@ -272,7 +276,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
-  // v0.4.19: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
+  // v0.4.20: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
   await createWindow();
   initAutoUpdater();
   cleanupOldLogs().catch(() => {});
@@ -620,7 +624,12 @@ async function accountServerUnsigned(pathname, { method='GET', body=null, timeou
 async function accountServerHealth() {
   const data = await accountServerUnsigned('/health', { timeoutMs:8000 });
   if (data?.service !== 'easycraft-account' || data?.protocol !== 'easycraft-account-v2-srp') {
-    const err = new Error('연결된 서버가 EasyCraft Account Server beta.11 계열이 아닙니다.');
+    const err = new Error('연결된 서버가 EasyCraft Account Server 계열이 아닙니다.');
+    err.scope = 'account-server'; err.stage = 'health';
+    throw err;
+  }
+  if (!Array.isArray(data?.capabilities) || !data.capabilities.includes('server-microsoft-refresh-v1')) {
+    const err = new Error('EasyCraft Account Server v0.4.20 이상이 필요합니다. Weird Host 서버를 먼저 업데이트해 주세요.');
     err.scope = 'account-server'; err.stage = 'health';
     throw err;
   }
@@ -669,7 +678,7 @@ async function accountServerSigned(pathname, { method='GET', body=null, session=
   try { data = responseText ? JSON.parse(responseText) : {}; } catch {}
   if (!res.ok || data?.ok === false) {
     const err = new Error(data?.error || `EasyCraft 계정 서버 오류 (HTTP ${res.status})`);
-    err.status = res.status; err.needLogin = !!data?.needLogin || res.status === 401;
+    err.status = res.status; err.needLogin = !!data?.needLogin || res.status === 401; err.needRelink = !!data?.needRelink;
     err.scope = 'account-server'; err.stage = 'signed-http'; err.serverUrl = base;
     throw err;
   }
@@ -699,7 +708,57 @@ async function accountServerLogin(username, password) {
     vaultKeyB64:vaultKey.toString('base64'),
     username:finish.username || cleanUser
   });
-  return { session, vaultPresent:!!finish.vaultPresent, minecraft:finish.minecraft || null };
+  return { session, vaultPresent:!!finish.vaultPresent, serverLinked:!!finish.serverLinked, minecraft:finish.minecraft || null };
+}
+function serverManagedAccount(account, launcherUsername) {
+  const cloned = JSON.parse(JSON.stringify(account || {}));
+  delete cloned.refresh_token;
+  cloned._easycraftAuthFlow = 'account-server-v3';
+  cloned._easycraftLauncherUsername = launcherUsername || null;
+  cloned._easycraftRefreshedAt = Date.now();
+  cloned._easycraftOfflineCached = false;
+  return cloned;
+}
+async function uploadServerMicrosoftLink(account, session=null) {
+  const saved = session || await readLauncherSession();
+  if (!saved?.sessionId) throw new Error('EasyCraft 계정 로그인이 필요합니다.');
+  if (!account?.refresh_token) throw new Error('Microsoft refresh token이 없어 서버 연결 정보를 저장할 수 없습니다.');
+  const publicAccount = serverManagedAccount(account, saved.username || null);
+  return accountServerSigned('/api/minecraft/server-link', {
+    method:'PUT', session:saved,
+    body:{ refreshToken:String(account.refresh_token), account:publicAccount },
+    timeoutMs:18000
+  });
+}
+async function refreshAccountFromServer(session=null) {
+  const saved = session || await readLauncherSession();
+  if (!saved?.sessionId) throw new Error('EasyCraft 계정 로그인이 필요합니다.');
+  const data = await accountServerSigned('/api/minecraft/server-session', { session:saved, timeoutMs:60000 });
+  if (!data?.account?.access_token || !data?.account?.uuid || !data?.account?.name) {
+    const err = new Error(data?.error || 'EasyCraft 계정 서버에서 Minecraft 실행 정보를 받지 못했습니다.');
+    err.needRelink = !!data?.needRelink;
+    throw err;
+  }
+  return serverManagedAccount(data.account, saved.username || null);
+}
+async function refreshEasyCraftAccount(session=null) {
+  const saved = session || await readLauncherSession();
+  try {
+    return await refreshAccountFromServer(saved);
+  } catch (serverError) {
+    // v0.4.19 이전 vault에서 v0.4.20 서버 저장 방식으로 1회 자동 마이그레이션.
+    // Microsoft 인증이 가능한 PC에서는 기존 vault를 갱신해 서버용 refresh token 보관함을 채운다.
+    if (!serverError?.needRelink && serverError?.status !== 409) throw serverError;
+    try {
+      const legacy = await refreshAccountFromVault(saved, { migrateOnly:true });
+      await uploadServerMicrosoftLink(legacy, saved);
+      return serverManagedAccount(legacy, saved.username || null);
+    } catch (legacyError) {
+      serverError.technical = String(legacyError?.message || legacyError || serverError?.message || '');
+      serverError.needRelink = true;
+      throw serverError;
+    }
+  }
 }
 async function uploadAccountVault(account, session=null) {
   const saved = session || await readLauncherSession();
@@ -711,7 +770,7 @@ async function uploadAccountVault(account, session=null) {
     timeoutMs:18000
   });
 }
-async function refreshAccountFromVault(session=null) {
+async function refreshAccountFromVault(session=null, options={}) {
   const saved = session || await readLauncherSession();
   if (!saved?.sessionId || !saved?.vaultKeyB64) throw new Error('EasyCraft 계정 로그인이 필요합니다.');
   const data = await accountServerSigned('/api/vault', { session:saved, timeoutMs:18000 });
@@ -743,48 +802,60 @@ async function refreshAccountFromVault(session=null) {
   refreshed._easycraftRefreshedAt = Date.now();
   refreshed._easycraftOfflineCached = false;
   await uploadAccountVault(refreshed, saved).catch(() => {});
+  if (!options?.migrateOnly) await uploadServerMicrosoftLink(refreshed, saved).catch(() => {});
   return refreshed;
 }
 async function launcherAccountLogin(username, password) {
   const login = await accountServerLogin(username, password);
+  if (login.serverLinked) {
+    try {
+      const account = await refreshAccountFromServer(login.session);
+      const summary = await persistMicrosoftAccount(account);
+      return { session:login.session, needLink:false, needRelink:false, username:login.session.username, account:summary };
+    } catch (error) {
+      if (error?.needRelink) {
+        return { session:login.session, needLink:false, needRelink:true, username:login.session.username, error:String(error.message || error), technical:String(error?.technical || '') };
+      }
+      throw error;
+    }
+  }
   if (!login.vaultPresent) return { session:login.session, needLink:true, username:login.session.username };
   try {
-    const account = await refreshAccountFromVault(login.session);
+    // 기존 v0.4.19 vault를 Microsoft 로그인이 가능한 PC에서 자동으로 v0.4.20 서버 보관 방식으로 마이그레이션합니다.
+    const legacy = await refreshAccountFromVault(login.session, { migrateOnly:true });
+    await uploadServerMicrosoftLink(legacy, login.session);
+    const account = serverManagedAccount(legacy, login.session.username);
     const summary = await persistMicrosoftAccount(account);
     return { session:login.session, needLink:false, needRelink:false, username:login.session.username, account:summary };
   } catch (error) {
-    // EasyCraft 계정 로그인 자체는 성공했습니다. 저장된 Microsoft refresh token만
-    // 갱신하지 못한 경우 로그인 세션을 버리지 않고, 인증 가능한 PC에서 재연결할 수 있게 합니다.
-    if (error?.needRelink) {
-      return {
-        session: login.session,
-        needLink: false,
-        needRelink: true,
-        username: login.session.username,
-        error: friendlyMicrosoftAuthError(error),
-        technical: String(error?.technical || '')
-      };
-    }
-    throw error;
+    return {
+      session: login.session,
+      needLink: false,
+      needRelink: true,
+      username: login.session.username,
+      error: friendlyMicrosoftAuthError(error),
+      technical: String(error?.technical || error?.message || '')
+    };
   }
 }
 async function startMinecraftAccountLink() {
   const session = await readLauncherSession();
   if (!session?.sessionId || !session?.vaultKeyB64) throw new Error('먼저 EasyCraft 계정으로 로그인해 주세요.');
-  // v0.4.12 / beta.10과 같은 minecraft-java-core 내장 Microsoft Device Code 인증입니다.
-  // Microsoft Application ID, Client Secret, OAuth callback server를 사용자가 설정하지 않습니다.
   const account = await new Microsoft().getAuth();
   if (!account || account.error || !account.refresh_token) throw new Error(friendlyMicrosoftAuthError(account || 'Microsoft 로그인 정보를 받지 못했습니다.'));
   account._easycraftAuthFlow = 'account-vault-v2';
   account._easycraftLauncherUsername = session.username || null;
   account._easycraftRefreshedAt = Date.now();
   account._easycraftOfflineCached = false;
+  // 기존 암호화 vault도 호환성/복구용으로 유지하고, v0.4.20 서버용 refresh token 보관함을 함께 채웁니다.
   await uploadAccountVault(account, session);
-  const summary = await persistMicrosoftAccount(account);
-  return { ok:true, account:summary };
+  await uploadServerMicrosoftLink(account, session);
+  const managed = serverManagedAccount(account, session.username || null);
+  const summary = await persistMicrosoftAccount(managed);
+  return { ok:true, account:summary, serverManaged:true };
 }
 async function startDirectMicrosoftLogin() {
-  // v0.4.19 비로그인 모드: EasyCraft 계정 서버 없이 Microsoft/Minecraft만 직접 인증합니다.
+  // v0.4.20 비로그인 모드: EasyCraft 계정 서버 없이 Microsoft/Minecraft만 직접 인증합니다.
   const account = await new Microsoft().getAuth();
   if (!account || account.error || !account.refresh_token) {
     throw new Error(friendlyMicrosoftAuthError(account || 'Microsoft 로그인 정보를 받지 못했습니다.'));
@@ -1299,7 +1370,7 @@ ipcMain.handle('login-launcher-account', async (_event, username, password) => {
         return { ok:true, needLink:true, needRelink:false, username:result.username };
       }
       if (result.needRelink) {
-        send('status', { text: `EasyCraft 로그인 완료 · 저장된 Minecraft 인증을 갱신하지 못했습니다. 이 PC에서 다시 연결할 수 있습니다.`, kind: 'warning' });
+        send('status', { text: `EasyCraft 로그인 완료 · 저장된 Minecraft 인증이 만료되었거나 취소되었습니다. Microsoft 로그인이 가능한 PC에서 한 번 다시 연결해 주세요.`, kind: 'warning' });
         return { ok:true, needLink:false, needRelink:true, username:result.username, error:result.error, technical:result.technical || '' };
       }
       send('status', { text: `${result.account?.name || 'Minecraft 계정'} 동기화 완료`, kind: 'success' });
@@ -2265,7 +2336,7 @@ async function ensureFreshAccountForLaunch() {
     const previous = currentAccount;
     const refreshed = isDirectMicrosoftAccount(previous)
       ? await refreshDirectMicrosoftAccount(previous)
-      : await refreshAccountFromVault();
+      : await refreshEasyCraftAccount();
     if (!refreshed || refreshed.error) throw new Error(refreshed?.error || (isDirectMicrosoftAccount(previous) ? 'Microsoft 인증 갱신 실패' : 'EasyCraft 계정 동기화 실패'));
     refreshed._easycraftSkinUrl = previous._easycraftSkinUrl || null;
     refreshed._easycraftFaceDataUrl = previous._easycraftFaceDataUrl || null;
@@ -2593,7 +2664,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.19 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.20 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };
