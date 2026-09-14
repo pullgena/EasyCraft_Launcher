@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.20',
+  appVersion: '0.4.21',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -29,7 +29,9 @@ const state = {
   searchLoading: false,
   logLines: [],
   logInstanceId: null,
-  accountLoginBusy: false
+  accountLoginBusy: false,
+  tokenStatus: null,
+  tokenStatusLoading: false
 };
 
 function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -54,7 +56,7 @@ function switchView(view) {
   syncContentHeaderFade(view === 'content' ? $('#view-content').scrollTop : 0, view === 'content');
   if (view === 'content') { refreshCapabilities().then(async () => { await renderContent(); await searchContent(true); }); }
   if (view === 'logs') reloadLogs();
-  if (view === 'settings') renderSettings();
+  if (view === 'settings') { renderSettings(); refreshAccountTokenStatus(); }
 }
 
 function renderAccount() {
@@ -80,6 +82,60 @@ function renderAccount() {
   $('#settingsAccountName').textContent = account
     ? `${account.name}${account.authMode === 'microsoft-direct' ? ' · Microsoft 직접 로그인' : (account.launcherUsername ? ` · EasyCraft ${account.launcherUsername}` : '')}${account.offlineCached ? ' · 오프라인 캐시' : ''}`
     : '로그인하지 않았습니다.';
+  renderTokenStatus();
+}
+function formatServerTime(seconds) {
+  if (!seconds) return '확인할 수 없음';
+  try { return new Date(Number(seconds) * 1000).toLocaleString('ko-KR'); } catch { return '확인할 수 없음'; }
+}
+function renderTokenStatus() {
+  const row = $('#tokenStatusRow');
+  if (!row) return;
+  const isEasyCraft = state.account?.authMode === 'easycraft-account' && !!state.account?.launcherUsername;
+  row.classList.toggle('hidden', !isEasyCraft);
+  if (!isEasyCraft) { state.tokenStatus = null; state.tokenStatusLoading = false; return; }
+  const title = $('#settingsTokenStatus');
+  const meta = $('#settingsTokenMeta');
+  const btn = $('#refreshTokenStatusBtn');
+  if (btn) btn.disabled = !!state.tokenStatusLoading;
+  if (state.tokenStatusLoading) {
+    title.textContent = '토큰 상태 확인 중…';
+    meta.textContent = 'EasyCraft 계정 서버에서 Microsoft 연결 상태를 확인하고 있습니다.';
+    return;
+  }
+  const status = state.tokenStatus;
+  if (!status) {
+    title.textContent = '토큰 상태를 확인해 주세요';
+    meta.textContent = '새로고침을 눌러 서버에 저장된 Microsoft 연결 상태를 확인할 수 있습니다.';
+    return;
+  }
+  if (status.error) {
+    title.textContent = '토큰 상태를 확인하지 못했습니다';
+    meta.textContent = status.error;
+    return;
+  }
+  if (!status.linked) {
+    title.textContent = 'Microsoft 계정 연결 필요';
+    meta.textContent = status.message || 'EasyCraft 계정에 Microsoft 연결 토큰이 아직 저장되지 않았습니다.';
+    return;
+  }
+  const days = Math.max(0, Number(status.estimatedDaysRemaining || 0));
+  title.textContent = `예상 남은 토큰 기간 · ${days}일`;
+  meta.textContent = `마지막 저장/갱신: ${formatServerTime(status.lastRotatedAt)} · Microsoft 기본 90일 기준 예상치이며 실제 토큰은 더 일찍 취소될 수 있습니다.`;
+}
+async function refreshAccountTokenStatus() {
+  const isEasyCraft = state.account?.authMode === 'easycraft-account' && !!state.account?.launcherUsername;
+  if (!isEasyCraft) { state.tokenStatus=null; renderTokenStatus(); return; }
+  if (state.tokenStatusLoading) return;
+  state.tokenStatusLoading = true; renderTokenStatus();
+  try {
+    const r = await api.getAccountTokenStatus();
+    state.tokenStatus = r?.ok ? r : { error:r?.error || '토큰 상태를 확인하지 못했습니다.' };
+  } catch (error) {
+    state.tokenStatus = { error:error?.message || String(error) };
+  } finally {
+    state.tokenStatusLoading = false; renderTokenStatus();
+  }
 }
 function renderHero() {
   const inst = currentInstance();
@@ -243,6 +299,7 @@ async function submitLauncherLogin() {
     }
     state.account=r.account;
     renderAccount();
+    refreshAccountTokenStatus();
     closeModal('launcherLoginModal');
     toast(`${r.account?.name||'Minecraft 계정'} 동기화 완료`);
   } catch(error) {
@@ -266,6 +323,7 @@ async function linkMinecraftAccount() {
     }
     state.account=r.account;
     renderAccount();
+    refreshAccountTokenStatus();
     closeModal('launcherLoginModal');
     toast(`${r.account?.name||'Minecraft 계정'} 연결 완료`);
   } catch(error) {
@@ -779,7 +837,7 @@ function startGeneratedIntro(){
   setTimeout(()=>intro.classList.add('leaving'),2850);
   setTimeout(()=>intro.remove(),3350);
 }
-function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;}
+function renderSettings(){renderAccount();renderHero();renderTokenStatus();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;}
 
 function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classList.contains('active')){
   const heading=$('#pageHeading');if(!heading)return;
@@ -842,6 +900,7 @@ $('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInst
 $('#deleteAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i||!state.installedItems.length)return;if(!(await askConfirm(`현재 ${contentTypeLabel()}를 모두 삭제할까요?`,'전체 삭제')))return;const btn=$('#deleteAllContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteAllContent(i.id,state.contentType);btn.textContent='전체 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'전체 삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast('전체 삭제가 완료되었습니다.');});
 $('#dependencyConfirmBtn').addEventListener('click',()=>closeDependencyPrompt(true));$('#dependencyCancelBtn').addEventListener('click',()=>closeDependencyPrompt(false));$('#confirmYesBtn').addEventListener('click',()=>closeConfirmPrompt(true));$('#confirmNoBtn').addEventListener('click',()=>closeConfirmPrompt(false));
 async function openReleaseNotes(){const version=state.update.availableVersion;if(!version)return toast('확인할 업데이트 버전이 없습니다.',true);const r=await api.openLauncherReleaseNotes(version);if(!r.ok)toast(r.error||'업데이트 내역을 열지 못했습니다.',true);}
+$('#refreshTokenStatusBtn').addEventListener('click',refreshAccountTokenStatus);
 $('#settingsReleaseNotesBtn').addEventListener('click',openReleaseNotes);
 $('#updateToastNotesBtn').addEventListener('click',openReleaseNotes);
 $('#manualUpdateCheckBtn').addEventListener('click',async()=>{await api.checkLauncherUpdate();});
@@ -866,7 +925,7 @@ $('#uninstallYesBtn').addEventListener('click',async()=>{
   $('.uninstall-warning').textContent='EasyCraft Launcher를 종료하고 삭제하고 있습니다…';
 });
 
-api.onAccountChanged(a=>{state.account=a;renderAccount();});
+api.onAccountChanged(a=>{state.account=a;renderAccount();refreshAccountTokenStatus();});
 api.onStatus(s=>{if(s?.text)toast(s.text,s?.kind==='error');});
 api.onLaunchProgress(p=>{if(state.launchState!=='stopping')showLaunchPop('Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
 api.onLaunchState(applyLaunchState);
@@ -881,11 +940,11 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.20';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.21';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 
-    // v0.4.20: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
+    // v0.4.21: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
     api.fetchVersions().then(vr=>{state.versions=vr?.versions||[];state.latest=vr?.latest||'latest_release';renderAll();}).catch(error=>console.warn('Minecraft 버전 목록 갱신 실패',error));
     refreshCapabilities().then(()=>renderAll()).catch(()=>{});
   } catch(error) {

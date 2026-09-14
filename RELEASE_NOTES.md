@@ -1,13 +1,13 @@
-# EasyCraft Launcher v0.4.20
+# EasyCraft Launcher v0.4.21
 
-🔐 EasyCraft 계정에 연결한 Microsoft/Minecraft 인증을 서버에서 자동 갱신할 수 있도록 개선했습니다.  
-☁️ Microsoft 계정을 한 번 연결하면 refresh token이 서버 전용 키로 암호화되어 저장됩니다.  
-🖥️ 다른 PC에서는 EasyCraft 계정 로그인만으로 저장된 Minecraft 연결을 불러올 수 있도록 개선했습니다.  
-🛡️ 다른 PC에는 Microsoft refresh token을 전달하지 않고 Minecraft 실행에 필요한 단기 인증정보만 전달합니다.  
-🔄 Microsoft 인증 서버의 일시적인 오류가 발생하면 자동으로 다시 시도하도록 개선했습니다.  
-🔑 실제로 Microsoft 인증이 만료되거나 취소된 경우에만 계정 재연결을 요청하도록 개선했습니다.  
-⬆️ 기존 EasyCraft 계정의 Minecraft 연결 정보를 v0.4.20 서버 방식으로 자동 이전할 수 있도록 추가했습니다.  
-🛠️ 계정 인증 및 동기화 관련 오류 처리를 개선했습니다.
+🔐 EasyCraft 계정에 연결된 Microsoft 토큰의 예상 남은 기간을 설정에서 확인할 수 있습니다.  
+🕒 마지막 토큰 저장/갱신 시각을 함께 표시합니다.  
+🖥️ Microsoft refresh token이 서버에 저장되거나 교체되면 Weird Host 서버 콘솔에 토큰 이벤트가 표시됩니다.  
+🛡️ 보안을 위해 서버 콘솔에는 토큰 원문이 아닌 안전한 fingerprint만 표시됩니다.  
+🔄 서버 토큰 상태 확인 API와 자동 갱신 상태 처리를 개선했습니다.  
 
-## 다운로드
-Windows 사용자는 Release의 **EasyCraft-Launcher-Setup-0.4.20.exe** 파일만 다운로드하세요.
+> 표시되는 남은 일수는 Microsoft의 기본 90일 refresh token 수명을 기준으로 한 예상치입니다. 실제 토큰은 계정 보안 변경이나 권한 철회 등으로 더 일찍 무효화될 수 있습니다.
+
+**다운로드**
+
+`.exe` 파일만 다운로드하세요!!!

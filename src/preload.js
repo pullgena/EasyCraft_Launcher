@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   loginDirectMicrosoft: () => ipcRenderer.invoke('login-direct-microsoft'),
   readLegalDocument: kind => ipcRenderer.invoke('read-legal-document', kind),
   logout: () => ipcRenderer.invoke('logout'),
+  getAccountTokenStatus: () => ipcRenderer.invoke('get-account-token-status'),
 
   createInstance: data => ipcRenderer.invoke('create-instance', data),
   selectInstance: id => ipcRenderer.invoke('select-instance', id),

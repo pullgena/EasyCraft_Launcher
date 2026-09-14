@@ -1,7 +1,6 @@
-# EasyCraft v0.4.20 Weird Host 연결
+# EasyCraft v0.4.21 Weird Host 연결
 
-런처에 포함된 계정 서버 주소:
-`https://waffle-gangway-actress.ngrok-free.dev`
+Launcher v0.4.21은 Account Server v0.4.21의 `token-status-v1` 기능을 사용합니다.
+따라서 Weird Host 서버도 v0.4.21로 업데이트해야 합니다.
 
-v0.4.20 Launcher를 사용하기 전에 Weird Host의 EasyCraft Account Server도 v0.4.20으로 업데이트해야 합니다.
-브라우저에서 `/health`를 열었을 때 `server-microsoft-refresh-v1` capability가 보여야 합니다.
+기존 `data/easycraft_accounts.db`, `data/server_master_key.bin`, `tunnel_config.json`은 삭제하지 마세요.

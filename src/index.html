@@ -148,33 +148,38 @@
               <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">로그인하지 않았습니다.</h3><p>EasyCraft 계정으로 동기화하거나, EasyCraft 계정 없이 Microsoft Minecraft 계정만 인증해 사용할 수 있습니다.</p></div>
               <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn" type="button">로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn" type="button">로그아웃</button></div>
             </section>
-            <section class="setting-row">
+            <section class="setting-row hidden" id="tokenStatusRow">
               <div class="setting-index">02</div>
+              <div class="setting-copy"><span>MICROSOFT TOKEN</span><h3 id="settingsTokenStatus">확인 중…</h3><p id="settingsTokenMeta">EasyCraft 계정에 저장된 Microsoft 연결 토큰의 예상 남은 기간을 표시합니다.</p></div>
+              <div class="setting-actions"><button class="setting-button" id="refreshTokenStatusBtn" type="button">새로고침</button></div>
+            </section>
+            <section class="setting-row">
+              <div class="setting-index">03</div>
               <div class="setting-copy"><span>INSTANCE</span><h3 id="settingsInstanceName">인스턴스 없음</h3><p>RAM, Java, 해상도, 버전과 모드 로더를 설정합니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsInstanceBtn">인스턴스 설정</button></div>
             </section>
             <section class="setting-row update-row">
-              <div class="setting-index">03</div>
+              <div class="setting-index">04</div>
               <div class="setting-copy"><span>UPDATE</span><h3 id="updateStatusTitle">업데이트 상태 확인 중</h3><p id="updateStatusText">프로그램을 시작할 때 최신 버전을 확인합니다.</p><div class="thin-progress"><span id="updateProgress"></span></div></div>
               <div class="setting-actions wrap"><button class="setting-button hidden" id="settingsReleaseNotesBtn">업데이트 내역 보기</button><button class="setting-button" id="manualUpdateCheckBtn">업데이트 확인</button><button class="setting-button primary hidden" id="settingsUpdateActionBtn">업데이트</button></div>
             </section>
             <section class="setting-row">
-              <div class="setting-index">04</div>
+              <div class="setting-index">05</div>
               <div class="setting-copy"><span>LOGS</span><h3>로그 자동 삭제</h3><p>7일이 지난 로그와 오래된 로그 파일을 자동으로 정리합니다.</p></div>
               <div class="setting-actions"><label class="switch-line setting-switch"><input type="checkbox" id="autoDeleteLogsToggle" checked /><span>자동 삭제</span></label></div>
             </section>
             <section class="setting-row">
-              <div class="setting-index">05</div>
+              <div class="setting-index">06</div>
               <div class="setting-copy"><span>FILES</span><h3>인스턴스 파일</h3><p>현재 인스턴스의 Minecraft 폴더를 엽니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsOpenFolderBtn">폴더 열기</button></div>
             </section>
             <section class="setting-row">
-              <div class="setting-index">06</div>
+              <div class="setting-index">07</div>
               <div class="setting-copy"><span>LEGAL</span><h3>약관 및 개인정보</h3><p>EasyCraft 이용약관, 개인정보처리방침과 제3자 서비스 고지를 확인합니다.</p></div>
               <div class="setting-actions wrap"><button class="setting-button" id="termsBtn" type="button">이용약관</button><button class="setting-button" id="privacyBtn" type="button">개인정보처리방침</button><button class="setting-button" id="thirdPartyBtn" type="button">제3자 고지</button><button class="setting-button" id="accountDeletionBtn" type="button">삭제 안내</button></div>
             </section>
             <section class="setting-row uninstall-row">
-              <div class="setting-index">07</div>
+              <div class="setting-index">08</div>
               <div class="setting-copy"><span>UNINSTALL</span><h3>EasyCraft Launcher 삭제</h3><p>런처와 EasyCraft가 관리하는 Minecraft 데이터를 이 PC에서 제거합니다.</p></div>
               <div class="setting-actions"><button class="setting-button danger" id="uninstallEasyCraftBtn">EasyCraft 삭제</button></div>
             </section>

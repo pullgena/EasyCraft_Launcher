@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.20",
-  "description": "EasyCraft Launcher v0.4.20 - server-side Microsoft session refresh, encrypted token vault, cross-device EasyCraft account sync, Fabric HUD and auto updates",
+  "version": "0.4.21",
+  "description": "EasyCraft Launcher v0.4.21 - server-side Microsoft session refresh, encrypted token vault, cross-device EasyCraft account sync, Fabric HUD and auto updates",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",

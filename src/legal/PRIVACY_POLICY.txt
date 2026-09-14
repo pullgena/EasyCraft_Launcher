@@ -1,7 +1,7 @@
 # EasyCraft Launcher 개인정보처리방침
 
 시행일: 2026-09-11
-버전: v0.4.20
+버전: v0.4.21
 
 EasyCraft는 기능 제공에 필요한 범위에서만 정보를 처리하도록 설계합니다. 로그인 방식에 따라 처리되는 정보가 다릅니다.
 
@@ -31,6 +31,10 @@ EasyCraft는 기능 제공에 필요한 범위에서만 정보를 처리하도�
 
 ## 3. Microsoft 비밀번호
 EasyCraft는 Microsoft 계정 비밀번호를 자체 서버에 저장하도록 설계하지 않습니다. Microsoft 인증은 Microsoft/Xbox/Minecraft 인증 흐름을 통해 처리됩니다.
+
+
+### 토큰 상태 및 서버 로그
+EasyCraft Account Server는 Microsoft refresh token의 생성·교체 여부를 운영 콘솔에서 확인할 수 있도록 토큰 원문이 아닌 SHA-256 기반의 짧은 fingerprint, EasyCraft 계정 ID, 저장/갱신 시각 및 예상 남은 기간을 기록할 수 있습니다. refresh token 원문은 콘솔 로그에 출력하지 않습니다.
 
 ## 4. EasyCraft 계정 보관함
 EasyCraft 계정 동기화 기능에서는 호환성/복구용 클라이언트 암호화 보관함과 함께 Microsoft refresh token을 계정 서버의 전용 암호화 키로 AES-256-GCM 암호화해 저장할 수 있습니다. 서버는 이 refresh token을 사용해 Microsoft/Xbox/Minecraft 인증을 자동 갱신하고, 다른 PC에는 refresh token이 아닌 현재 Minecraft 실행에 필요한 단기 access token만 전달합니다. Microsoft 비밀번호는 서버에 저장하지 않습니다.
