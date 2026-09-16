@@ -1,7 +1,7 @@
 # EasyCraft Launcher 이용약관
 
 시행일: 2026-09-11
-버전: v0.4.23
+버전: v0.4.24
 
 ## 1. 목적
 이 약관은 EasyCraft Launcher(이하 “EasyCraft”)를 이용할 때 필요한 기본 조건과 운영 원칙을 안내하기 위한 것입니다.
@@ -18,8 +18,7 @@ EasyCraft는 Microsoft, Mojang Studios, Minecraft, Modrinth, OpenAI 또는 기�
 
 ## 4. 로그인 방식
 EasyCraft는 다음 두 가지 방식을 제공할 수 있습니다.
-- EasyCraft 계정 로그인: 연결한 Minecraft 계정을 암호화된 보관함 형태로 동기화할 수 있습니다.
-- EasyCraft 계정 없이 시작: Microsoft/Minecraft 계정만 인증하며, 해당 인증정보는 기본적으로 현재 PC의 EasyCraft 사용자 데이터 영역에 저장됩니다.
+- EasyCraft 웹 계정 로그인: 연결한 Minecraft 계정을 암호화된 보관함 형태로 동기화할 수 있습니다.
 
 Microsoft 비밀번호를 EasyCraft 서버에 직접 저장하는 방식은 사용하지 않습니다.
 

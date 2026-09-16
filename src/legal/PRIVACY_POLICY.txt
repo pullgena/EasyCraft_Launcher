@@ -1,7 +1,7 @@
 # EasyCraft Launcher 개인정보처리방침
 
 시행일: 2026-09-11
-버전: v0.4.23
+버전: v0.4.24
 
 EasyCraft는 기능 제공에 필요한 범위에서만 정보를 처리하도록 설계합니다. 로그인 방식에 따라 처리되는 정보가 다릅니다.
 
@@ -29,13 +29,13 @@ EasyCraft는 기능 제공에 필요한 범위에서만 정보를 처리하도�
 - 스킨/프로필 표시
 - 서비스 보안 및 오류 대응
 
-### EasyCraft 웹 인증 사이트를 사용할 때
+### EasyCraft 웹 로그인/인증 사이트를 사용할 때
 - 런처가 발급한 일회용 인증 링크/웹 세션 정보
 - Microsoft가 발급한 OAuth access token 및 refresh token
 - Minecraft Java 프로필 이름 및 UUID
 - 토큰 저장·갱신 시각
 
-Microsoft 비밀번호는 EasyCraft 인증 사이트에 입력하지 않습니다. 사용자는 Microsoft 공식 로그인 페이지에서 직접 인증합니다. 인증 완료 후 refresh token은 EasyCraft Account Server가 서버 전용 키로 AES-256-GCM 암호화하여 저장하며, 런처에는 refresh token을 전달하지 않습니다. 일회용 인증 링크는 짧은 시간만 유효하며 한 번 사용하면 폐기됩니다.
+EasyCraft ID와 비밀번호는 웹사이트에서 입력하지만 비밀번호 원문은 브라우저의 SRP 계산에만 사용되며 서버로 전송하지 않습니다. Microsoft 비밀번호는 EasyCraft 인증 사이트에 입력하지 않습니다. 사용자는 Microsoft 공식 로그인 페이지에서 직접 인증합니다. 인증 완료 후 refresh token은 EasyCraft Account Server가 서버 전용 키로 AES-256-GCM 암호화하여 저장하며, 런처에는 refresh token을 전달하지 않습니다. 런처가 생성하는 웹 로그인 링크와 폴링 토큰은 짧은 시간만 유효하며 한 번 사용하면 폐기됩니다.
 
 ## 3. Microsoft 비밀번호
 EasyCraft는 Microsoft 계정 비밀번호를 자체 서버에 저장하도록 설계하지 않습니다. Microsoft 인증은 Microsoft/Xbox/Minecraft 인증 흐름을 통해 처리됩니다.

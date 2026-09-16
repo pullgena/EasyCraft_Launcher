@@ -13,7 +13,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.22 (Minecraft launcher; EasyCraft web authentication; server-managed Minecraft session; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.24 (Minecraft launcher; website login; server-managed Minecraft session; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -237,7 +237,7 @@ async function loadSavedAccount() {
   }
 
   const session = await readLauncherSession();
-  if (session?.sessionId && session?.sessionKeyB64 && session?.vaultKeyB64) {
+  if (session?.sessionId && session?.sessionKeyB64) {
     try {
       const refreshed = await refreshEasyCraftAccount(session);
       refreshed._easycraftSkinUrl = cached?._easycraftSkinUrl || null;
@@ -585,7 +585,7 @@ function decryptAccountVault(vault, vaultKeyB64) {
 async function readLauncherSession() {
   try {
     const parsed = await readSecureJson(launcherSessionPath());
-    if (!parsed?.sessionId || !parsed?.sessionKeyB64 || !parsed?.vaultKeyB64) return null;
+    if (!parsed?.sessionId || !parsed?.sessionKeyB64) return null;
     return parsed;
   } catch { return null; }
 }
@@ -630,13 +630,13 @@ async function accountServerUnsigned(pathname, { method='GET', body=null, timeou
 }
 async function accountServerHealth() {
   const data = await accountServerUnsigned('/health', { timeoutMs:8000 });
-  if (data?.service !== 'easycraft-account' || data?.protocol !== 'easycraft-account-v3-webauth') {
+  if (data?.service !== 'easycraft-account' || data?.protocol !== 'easycraft-account-v4-web-login') {
     const err = new Error('연결된 서버가 EasyCraft Account Server 계열이 아닙니다.');
     err.scope = 'account-server'; err.stage = 'health';
     throw err;
   }
-  if (!Array.isArray(data?.capabilities) || !data.capabilities.includes('server-microsoft-refresh-v1') || !data.capabilities.includes('token-status-v1') || !data.capabilities.includes('web-microsoft-auth-v1')) {
-    const err = new Error('EasyCraft Account Server v0.4.22 이상이 필요합니다. Weird Host 서버를 먼저 업데이트해 주세요.');
+  if (!Array.isArray(data?.capabilities) || !data.capabilities.includes('server-microsoft-refresh-v1') || !data.capabilities.includes('token-status-v1') || !data.capabilities.includes('web-microsoft-auth-v1') || !data.capabilities.includes('web-launcher-login-v1') || !data.capabilities.includes('web-easycraft-srp-login-v1')) {
+    const err = new Error('EasyCraft Account Server v0.4.24 이상이 필요합니다. Weird Host 서버를 먼저 업데이트해 주세요.');
     err.scope = 'account-server'; err.stage = 'health';
     throw err;
   }
@@ -835,6 +835,45 @@ async function loadSessionOnlyAccountSummary(session) {
     offlineCached:false, launcherUsername:data?.username || session?.username || null,
     authMode:'easycraft-account', sessionOnly:true, serverLinked:!!data?.serverLinked
   };
+}
+
+async function startLauncherWebLogin() {
+  await accountServerHealth();
+  const data = await accountServerUnsigned('/api/launcher-login/create', {
+    method:'POST', body:{}, timeoutMs:12000
+  });
+  const url = String(data?.url || '');
+  const pollToken = String(data?.pollToken || '');
+  if (!/^https:\/\//i.test(url) || pollToken.length < 20) throw new Error('EasyCraft 웹 로그인 주소를 받지 못했습니다.');
+  await shell.openExternal(url);
+  return { ok:true, url, pollToken, expiresAt:Number(data?.expiresAt || 0), expiresIn:Number(data?.expiresIn || 600) };
+}
+async function redeemLauncherWebLogin(pollToken) {
+  const data = await accountServerUnsigned('/api/launcher-login/redeem', {
+    method:'POST', body:{ pollToken:String(pollToken || '') }, timeoutMs:15000
+  });
+  if (data?.state !== 'ready' || !data?.session?.sessionId || !data?.session?.sessionKeyB64) {
+    return { ok:true, pending:true, state:String(data?.state || 'pending'), message:String(data?.message || ''), username:data?.username || null, minecraft:data?.minecraft || null };
+  }
+  const session = await saveLauncherSession({
+    sessionId:data.session.sessionId,
+    sessionKeyB64:data.session.sessionKeyB64,
+    vaultKeyB64:'',
+    username:data.session.username || data.username || ''
+  });
+  let summary = easyCraftSessionOnlySummary({ session, minecraft:data.minecraft || null }, { serverLinked:!!data.serverLinked });
+  let syncWarning = '';
+  if (data.serverLinked) {
+    try {
+      const account = await refreshAccountFromServer(session);
+      summary = await persistMicrosoftAccount(account);
+    } catch (error) {
+      syncWarning = friendlyMicrosoftAuthError(error);
+      currentAccount = null;
+      await fsp.rm(accountPath(), { force:true }).catch(() => {});
+    }
+  }
+  return { ok:true, pending:false, state:'ready', account:summary, username:session.username, syncWarning };
 }
 
 async function launcherAccountLogin(username, password) {
@@ -1164,6 +1203,26 @@ ipcMain.handle('instance-version-status', async (_event, id) => {
   } catch (error) { return { ok:false, error:error.message }; }
 });
 let activeLauncherAccountLogin = null;
+ipcMain.handle('start-web-login', async () => {
+  try {
+    send('status', { text:'EasyCraft 로그인 사이트를 열고 있습니다…', kind:'info' });
+    return await startLauncherWebLogin();
+  } catch (error) {
+    const message = error?.scope === 'account-server' ? friendlyAccountServerError(error) : String(error?.message || error || '웹 로그인 사이트를 열지 못했습니다.');
+    return { ok:false, error:message };
+  }
+});
+ipcMain.handle('poll-web-login', async (_event, pollToken) => {
+  try {
+    const result = await redeemLauncherWebLogin(pollToken);
+    if (!result.pending && result.account) send('account-changed', result.account);
+    return result;
+  } catch (error) {
+    const message = error?.scope === 'account-server' ? friendlyAccountServerError(error) : String(error?.message || error || '웹 로그인 상태를 확인하지 못했습니다.');
+    return { ok:false, error:message, needLogin:!!error?.needLogin };
+  }
+});
+
 ipcMain.handle('login-launcher-account', async (_event, username, password) => {
   if (activeLauncherAccountLogin) return activeLauncherAccountLogin;
   activeLauncherAccountLogin = (async () => {
@@ -2368,7 +2427,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   let summary = accountSummary(currentAccount);
   if (!summary || !currentAccount) summary = await loadSavedAccount();
   if (!summary || !currentAccount) {
-    return { ok:false, needLogin:true, error:'Minecraft Java Edition을 사용하려면 EasyCraft 계정으로 로그인하거나 "EasyCraft 계정 없이 시작"에서 Microsoft Minecraft 계정을 인증해 주세요.' };
+    return { ok:false, needLogin:true, error:'Minecraft Java Edition을 사용하려면 EasyCraft 로그인 사이트에서 로그인과 Microsoft/Minecraft 인증을 완료해 주세요.' };
   }
   const authState = await ensureFreshAccountForLaunch();
   const offlineFallback = !authState.ok && authState.cached;
@@ -2441,7 +2500,7 @@ ipcMain.handle('launch-game', async (_event, id) => {
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.22 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.24 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

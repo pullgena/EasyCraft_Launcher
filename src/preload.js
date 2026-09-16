@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   fetchVersions: () => ipcRenderer.invoke('fetch-versions'),
   fetchLoaderVersions: (loader, minecraftVersion) => ipcRenderer.invoke('fetch-loader-versions', loader, minecraftVersion),
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
+  startWebLogin: () => ipcRenderer.invoke('start-web-login'),
+  pollWebLogin: pollToken => ipcRenderer.invoke('poll-web-login', pollToken),
   loginLauncherAccount: (username, password) => ipcRenderer.invoke('login-launcher-account', username, password),
   linkMinecraftAccount: () => ipcRenderer.invoke('link-minecraft-account'),
   loginDirectMicrosoft: () => ipcRenderer.invoke('login-direct-microsoft'),

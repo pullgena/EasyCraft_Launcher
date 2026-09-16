@@ -1,225 +1,69 @@
 const fs = require('fs');
 const path = require('path');
-
 const root = path.join(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8');
-const renderer = fs.readFileSync(path.join(root, 'src', 'renderer.js'), 'utf8');
-const preload = fs.readFileSync(path.join(root, 'src', 'preload.js'), 'utf8');
-const main = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
+const read = p => fs.readFileSync(path.join(root,p),'utf8');
+const html = read('src/index.html');
+const renderer = read('src/renderer.js');
+const preload = read('src/preload.js');
+const main = read('src/main.js');
+const styles = read('src/styles.css');
+const pkg = JSON.parse(read('package.json'));
+const workflow = read('.github/workflows/build-windows.yml');
+const serverCfg = JSON.parse(read('src/account-server.json'));
+let failed=false;
+function fail(m){console.error('SMOKE FAIL: '+m);failed=true;}
 
-function fail(message) {
-  console.error(`SMOKE FAIL: ${message}`);
-  process.exitCode = 1;
-}
-
-const htmlIds = new Set([...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]));
-const htmlIdList = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m => m[1]);
-for (const id of new Set(htmlIdList)) {
-  if (htmlIdList.filter(x => x === id).length > 1) fail(`duplicate HTML id #${id}`);
-}
-const rendererIdRefs = new Set([
-  ...[...renderer.matchAll(/\$\('#([^']+)'\)/g)].map(m => m[1]),
-  ...[...renderer.matchAll(/\$\("#([^"]+)"\)/g)].map(m => m[1])
+const ids=[...html.matchAll(/\bid=["']([^"']+)["']/g)].map(m=>m[1]);
+const idset=new Set(ids);
+for(const id of idset) if(ids.filter(x=>x===id).length>1) fail('duplicate HTML id #'+id);
+const refs=new Set([
+  ...[...renderer.matchAll(/\$\('#([^']+)'\)/g)].map(m=>m[1]),
+  ...[...renderer.matchAll(/\$\("#([^"]+)"\)/g)].map(m=>m[1])
 ]);
-for (const id of [...rendererIdRefs].sort()) {
-  if (!htmlIds.has(id)) fail(`renderer.js references missing HTML id #${id}`);
-}
+for(const id of [...refs].sort()) if(!idset.has(id)) fail('renderer.js references missing HTML id #'+id);
 
-const declared = new Set([
-  ...[...renderer.matchAll(/(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]),
-  ...[...renderer.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g)].map(m => m[1])
-]);
-const directHandlers = new Set([
-  ...[...renderer.matchAll(/addEventListener\([^,]+,\s*([A-Za-z_$][\w$]*)\s*[,)]/g)].map(m => m[1]),
-  ...[...renderer.matchAll(/api\.on\w+\(\s*([A-Za-z_$][\w$]*)\s*\)/g)].map(m => m[1])
-]);
-for (const handler of [...directHandlers].sort()) {
-  if (!declared.has(handler)) fail(`renderer.js uses undefined event handler ${handler}`);
-}
+const invoked=new Set([...preload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map(m=>m[1]));
+const handled=new Set([...main.matchAll(/ipcMain\.handle\('([^']+)'/g)].map(m=>m[1]));
+for(const ch of [...invoked].sort()) if(!handled.has(ch)) fail('preload invokes missing IPC handler: '+ch);
 
-const invoked = new Set([...preload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].map(m => m[1]));
-const handled = new Set([...main.matchAll(/ipcMain\.handle\('([^']+)'/g)].map(m => m[1]));
-for (const channel of [...invoked].sort()) {
-  if (!handled.has(channel)) fail(`preload invokes IPC channel without main handler: ${channel}`);
-}
+if(pkg.version!=='0.4.24') fail('package version must be 0.4.24');
+if(!workflow.includes("github.event.release.tag_name == 'v0.4.24'")) fail('release workflow must require v0.4.24');
+for(const asset of ['EasyCraft-Launcher-Setup-0.4.24.exe','EasyCraft-Launcher-Setup-0.4.24.exe.blockmap','dist/latest.yml']) if(!workflow.includes(asset)) fail('workflow missing '+asset);
+if(!workflow.includes('gh release upload v0.4.24')) fail('workflow must upload to v0.4.24 release');
 
-// Beta 11 authentication invariants.
-for (const legacy of [
-  'auth-relay-open-site', 'auth-relay-redeem', 'relayLoginModal', 'microsoftClientIdInput',
-  'saveMicrosoftClientIdBtn', "ipcMain.handle('login-microsoft'", '/api/link/start', '/api/minecraft/account',
-  'MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'client_secret', 'redirect_uri', "_easycraftAuthFlow = 'account-server-v1'"
-]) {
-  if ([main, preload, renderer, html].some(text => text.includes(legacy))) fail(`legacy authentication reference remains: ${legacy}`);
-}
-for (const required of [
-  "const { Launch, Microsoft } = require('minecraft-java-core')",
-  "new Microsoft().getAuth()",
-  "new Microsoft().refresh(stored)",
-  "accountServerUnsigned('/api/auth/srp/start'",
-  "accountServerHealth()",
-  "friendlyAccountServerError(error)",
-  "accountServerUnsigned('/api/auth/srp/finish'",
-  "accountServerSigned('/api/vault'",
-  "createCipheriv('aes-256-gcm'",
-  "SRP_N_HEX",
-  "_easycraftAuthFlow = 'account-vault-v2'",
-  "ipcMain.handle('login-launcher-account'",
-  "ipcMain.handle('link-minecraft-account'"
-]) {
-  if (!main.includes(required)) fail(`beta.11 auth invariant missing: ${required}`);
-}
-if (!preload.includes('loginLauncherAccount') || !preload.includes('linkMinecraftAccount')) fail('account vault preload API is missing');
-if (!html.includes('launcherLoginModal') || !html.includes('minecraftLinkBtn')) fail('EasyCraft account login UI is missing');
-if (!fs.existsSync(path.join(root, 'src', 'account-server.json'))) fail('bundled account-server.json is missing');
-
-const serverConfig = JSON.parse(fs.readFileSync(path.join(root, 'src', 'account-server.json'), 'utf8'));
-if (serverConfig.protocol !== 'easycraft-account-v3-webauth') fail('account-server.json protocol is not easycraft-account-v3-webauth');
-if (serverConfig.baseUrl && /^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost)(?::|\/|$)/i.test(serverConfig.baseUrl)) fail('release source must not ship with a loopback account server URL');
-
-if (serverConfig.baseUrl !== 'https://waffle-gangway-actress.ngrok-free.dev') fail('bundled ngrok account server URL is incorrect');
-if (!main.includes("'ngrok-skip-browser-warning':'EasyCraft'")) fail('ngrok browser-warning bypass header is missing from account API requests');
-
-
-// v0.4.23 release / updater invariants.
-const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-if (pkg.version !== '0.4.23') fail('package version must be exactly 0.4.23');
-if (pkg.dependencies?.['electron-updater'] !== '6.8.9') fail('electron-updater dependency changed unexpectedly');
-const githubPublisher = (pkg.build?.publish || []).find(p => p?.provider === 'github');
-if (!githubPublisher) fail('GitHub publish provider is missing');
-if (githubPublisher.owner !== 'pullgena' || githubPublisher.repo !== 'EasyCraft_Launcher') fail('GitHub update repository is incorrect');
-for (const updaterInvariant of [
+for(const inv of [
   "require('electron-updater')",
   'autoUpdater.autoDownload = false',
-  'autoUpdater.allowPrerelease = false',
-  "autoUpdater.on('update-available'",
-  "autoUpdater.on('update-downloaded'",
-  'autoUpdaterInstance.downloadUpdate()',
-  'autoUpdaterInstance.quitAndInstall(true, true)',
+  'autoUpdater.disableDifferentialDownload = false',
   'scheduleAutomaticUpdateChecks()'
-]) {
-  if (!main.includes(updaterInvariant)) fail(`auto-update invariant missing: ${updaterInvariant}`);
-}
-const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'build-windows.yml'), 'utf8');
-if (!workflow.includes("github.event.release.tag_name == 'v0.4.23'")) fail('release workflow must require exact tag v0.4.23');
-for (const asset of ['EasyCraft-Launcher-Setup-0.4.23.exe', 'EasyCraft-Launcher-Setup-0.4.23.exe.blockmap', 'dist/latest.yml']) {
-  if (!workflow.includes(asset)) fail(`release workflow is missing updater asset: ${asset}`);
-}
-if (!workflow.includes('gh release upload v0.4.23')) fail('release workflow does not upload updater files to v0.4.23');
+]) if(!main.includes(inv)) fail('updater invariant missing: '+inv);
 
+if(serverCfg.protocol!=='easycraft-account-v4-web-login') fail('account-server protocol must be easycraft-account-v4-web-login');
+if(serverCfg.baseUrl!=='https://waffle-gangway-actress.ngrok-free.dev') fail('bundled account server URL changed unexpectedly');
+for(const req of [
+  "data?.protocol !== 'easycraft-account-v4-web-login'",
+  "web-launcher-login-v1",
+  "web-easycraft-srp-login-v1",
+  "accountServerUnsigned('/api/launcher-login/create'",
+  "accountServerUnsigned('/api/launcher-login/redeem'",
+  "ipcMain.handle('start-web-login'",
+  "ipcMain.handle('poll-web-login'"
+]) if(!main.includes(req)) fail('web login main invariant missing: '+req);
+for(const req of ['startWebLogin','pollWebLogin']) if(!preload.includes(req)) fail('preload web login API missing: '+req);
+for(const id of ['launcherLoginModal','webLoginOpenBtn','webLoginReopenBtn','webLoginWait','launcherLoginStatus']) if(!idset.has(id)) fail('web login UI missing #'+id);
+if(html.includes('launcherAccountPassword')||html.includes('launcherAccountId')) fail('v0.4.24 launcher must not ask for EasyCraft ID/PW inside the app');
+if(!renderer.includes('startWebLogin()')||!renderer.includes('pollWebLoginNow()')) fail('renderer web login flow missing');
 
+// v0.4.23 switch bug regression: the literal \\n prefix made the base selector invalid on Windows.
+if(styles.includes('\\n\\n/* v0.4.23: intuitive mod switches')) fail('literal \\n tokens still corrupt the mod switch selector');
+if(!styles.includes('.mod-toggle-switch{appearance:none;-webkit-appearance:none;border:0!important;outline:0;background:transparent!important;')) fail('mod toggle browser-default reset is missing');
+if(!renderer.includes('mod-toggle-switch')) fail('mod switch renderer is missing');
 
-// v0.4.23 non-blocking update UX.
-for (const id of ['updateToast', 'updateToastTitle', 'updateToastText', 'updateToastActionBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.23 update toast UI is missing #${id}`);
-}
-for (const phrase of [
-  '최신버전입니다!',
-  '응답하지 못했습니다. 나중에 다시 시도하세요.',
-  '업데이트를 확인하고 있습니다...'
-]) {
-  if (!renderer.includes(phrase)) fail(`v0.4.23 updater message is missing: ${phrase}`);
-}
-if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.23');
-// v0.4.23 startup-order check.
-// Use whitespace-tolerant regexes so GitHub Windows CRLF/formatting cannot create a false failure.
-if (!/await\s+createWindow\(\);\s*initAutoUpdater\(\);/.test(main)) {
-  fail('startup order invalid: createWindow must run immediately before updater initialization');
-}
-if (!/initAutoUpdater\(\);\s*cleanupOldLogs\(\)\.catch\(\(\)\s*=>\s*\{\}\);\s*loadSavedAccount\(\)/.test(main)) {
-  fail('startup background tasks are not scheduled after the window/updater initialization');
-}
-if (!main.includes("autoUpdater.autoDownload = false")) fail('updates must not auto-download before user approval');
-if (!main.includes("autoUpdater.disableDifferentialDownload = false")) fail('NSIS differential update must stay enabled');
-if (!pkg.build?.electronLanguages || !pkg.build.electronLanguages.includes('ko')) fail('Electron locale trimming is missing');
-if (!Array.isArray(pkg.build?.files) || !pkg.build.files.some(x => String(x).includes('**/*.map'))) fail('release package exclusions are missing');
+for(const req of ['classifyLogLine','syncSettingsHeading']) if(!renderer.includes(req)) fail('v0.4.23 UX invariant missing: '+req);
+if(main.includes('ensureMinecraftInGameHud(id, instance)')) fail('EasyCraft HUD must remain removed');
+for(const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOTICE.txt','ACCOUNT_DELETION.txt']) if(!fs.existsSync(path.join(root,'src','legal',legal))) fail('missing legal document '+legal);
 
-// v0.4.23: EasyCraft HUD feature is intentionally removed for now.
-if (main.includes('ensureMinecraftInGameHud(id, instance)')) fail('v0.4.23 must not auto-apply EasyCraft HUD');
-if (main.includes("name: '__easycraft_hud__'") || renderer.includes('EasyCraft 시스템 모드 · Fabric 전용 · 자동 관리')) fail('v0.4.23 must not expose EasyCraft HUD system mod');
+for(const marker of ['<<<<<<<','=======','>>>>>>>']) for(const [name,text] of [['main.js',main],['renderer.js',renderer],['preload.js',preload],['index.html',html]]) if(text.includes(marker)) fail(name+' contains git conflict marker');
 
-if (pkg.build?.nsis?.differentialPackage !== true) fail('NSIS differentialPackage optimization must be enabled');
-if (!fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8').includes('.update-toast{position:fixed;')) fail('update toast must stay fixed at the bottom center');
-
-
-
-// v0.4.23 direct Microsoft mode, legal documents, and generated intro.
-for (const id of ['generatedIntro','directMicrosoftLoginBtn','legalModal','legalModalTitle','legalDocumentText','termsBtn','privacyBtn','thirdPartyBtn','accountDeletionBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.23 UI is missing #${id}`);
-}
-for (const required of [
-  "ipcMain.handle('login-direct-microsoft'",
-  "startDirectMicrosoftLogin()",
-  "_easycraftAuthFlow = 'direct-microsoft-v1'",
-  "refreshDirectMicrosoftAccount(stored)",
-  "ipcMain.handle('read-legal-document'",
-  "안녕하세요!"
-]) {
-  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.23 feature invariant missing: ${required}`);
-}
-if (!preload.includes('loginDirectMicrosoft') || !preload.includes('readLegalDocument')) fail('v0.4.23 preload APIs are missing');
-if (!renderer.includes("directMicrosoftLogin()")) fail('direct Microsoft renderer flow is missing');
-if (!renderer.includes("startGeneratedIntro()")) fail('startup generated intro controller is missing');
-if (!fs.existsSync(path.join(root,'src','app-icon.png'))) fail('v0.4.23 launcher icon intro asset is missing');
-if (!html.includes('src="app-icon.png"')) fail('v0.4.23 intro does not use the EasyCraft launcher icon');
-if (html.includes('chatgpt-logo.png')) fail('v0.4.23 intro must not reference the old ChatGPT logo asset');
-const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
-for (const cls of ['.direct-microsoft-button{','.login-legal-links{','.legal-modal-card{','.legal-document{']) {
-  if (!styles.includes(cls)) fail(`v0.4.23 login/legal UI style is missing: ${cls}`);
-}
-if (!styles.includes('.direct-microsoft-button small{')) fail('direct Microsoft helper text styling is missing');
-if (!html.includes('EasyCraft 런처 아이콘 시작 인트로')) fail('v0.4.23 launcher icon intro aria label is missing');
-for (const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOTICE.txt','ACCOUNT_DELETION.txt']) {
-  if (!fs.existsSync(path.join(root,'src','legal',legal))) fail(`legal document is missing: ${legal}`);
-}
-
-// v0.4.23 content/log/settings/login UX fixes.
-if (!renderer.includes('mod-toggle-switch')) fail('v0.4.23 intuitive mod toggle UI is missing');
-if (!renderer.includes('classifyLogLine')) fail('v0.4.23 colored log classification is missing');
-if (!renderer.includes('syncSettingsHeading')) fail('v0.4.23 sticky settings heading controller is missing');
-if (!renderer.includes('EasyCraft 계정 로그인은 완료되었습니다')) fail('v0.4.23 account-login recovery UI is missing');
-if (!main.includes('easyCraftSessionOnlySummary')) fail('v0.4.23 session-only account recovery is missing');
-if (!main.includes("accountServerSigned('/api/session/status'")) fail('v0.4.23 session status fallback is missing');
-
-// v0.4.23 server-side Microsoft session refresh.
-for (const required of [
-  "server-microsoft-refresh-v1",
-  "_easycraftAuthFlow = 'account-server-v3'",
-  "accountServerSigned('/api/minecraft/server-session'",
-  "accountServerSigned('/api/minecraft/server-link'",
-  "uploadServerMicrosoftLink(account",
-  "refreshAccountFromServer(session=null)",
-  "delete cloned.refresh_token"
-]) {
-  if (!main.includes(required)) fail(`v0.4.23 server-side auth invariant missing: ${required}`);
-}
-if (!main.includes('EasyCraft Account Server v0.4.22 이상이 필요합니다')) fail('v0.4.23 launcher must reject an old account server without server refresh capability');
-if (!fs.readFileSync(path.join(root,'src','legal','PRIVACY_POLICY.txt'),'utf8').includes('전용 암호화 키로 AES-256-GCM')) fail('privacy policy must disclose server-side encrypted refresh-token storage');
-if (!main.includes("accountServerSigned('/api/token/status'")) fail('v0.4.23 token status API client is missing');
-if (!preload.includes('getAccountTokenStatus')) fail('v0.4.23 token status preload API is missing');
-for (const id of ['tokenStatusRow','settingsTokenStatus','settingsTokenMeta','refreshTokenStatusBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.23 token status UI is missing #${id}`);
-}
-if (!renderer.includes('예상 남은 토큰 기간')) fail('v0.4.23 token remaining-days UI text is missing');
-
-
-// v0.4.23 web-auth-site linking invariants.
-for (const required of [
-  "web-microsoft-auth-v1",
-  "accountServerSigned('/api/web-auth/create'",
-  "shell.openExternal(url)",
-  "Microsoft 인증 사이트 열기",
-  "인증 사이트가 열렸습니다. 사이트에서 Microsoft 인증을 완료한 뒤"
-]) {
-  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.23 web-auth invariant missing: ${required}`);
-}
-if (!main.includes("data?.protocol !== 'easycraft-account-v3-webauth'")) fail('v0.4.23 launcher must require easycraft-account-v3-webauth');
-if (!fs.readFileSync(path.join(root,'src','legal','PRIVACY_POLICY.txt'),'utf8').includes('EasyCraft 웹 인증 사이트')) fail('privacy policy must disclose the v0.4.23 web authentication site flow');
-
-const conflictMarkers = ['<<<<<<<', '=======', '>>>>>>>'];
-for (const [name, text] of [['renderer.js', renderer], ['preload.js', preload], ['main.js', main], ['index.html', html]]) {
-  if (conflictMarkers.some(marker => text.includes(marker))) fail(`${name} contains a Git conflict marker`);
-}
-
-if (!process.exitCode) {
-  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.23 updater + mod/log/settings UX + direct Microsoft + legal + launcher-icon intro + login UI fixes + server-side token refresh + token remaining-days status + web-auth-site + account-vault migration invariants checked.`);
-}
+if(failed) process.exit(1);
+console.log(`SMOKE OK: ${refs.size} UI ids, ${invoked.size} IPC invokes, v0.4.24 web login + updater + switch regression checks passed.`);

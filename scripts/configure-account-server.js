@@ -25,5 +25,5 @@ if (loopback && process.env.EASYCRAFT_ALLOW_LOCAL_ACCOUNT_SERVER !== '1') {
   process.exit(1);
 }
 const normalized = value.replace(/\/+$/, '');
-fs.writeFileSync(target, JSON.stringify({ baseUrl: normalized, protocol: 'easycraft-account-v3-webauth' }, null, 2) + '\n');
+fs.writeFileSync(target, JSON.stringify({ baseUrl: normalized, protocol: 'easycraft-account-v4-web-login' }, null, 2) + '\n');
 console.log(`EasyCraft account server configured: ${normalized}`);

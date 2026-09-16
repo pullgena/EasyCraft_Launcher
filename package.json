@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.23",
-  "description": "EasyCraft Launcher v0.4.23 - clearer mod toggles, color-coded logs, sticky settings heading, HUD removal and login recovery fixes",
+  "version": "0.4.24",
+  "description": "EasyCraft Launcher v0.4.24 - web-based EasyCraft login and Microsoft authentication, improved mod switch rendering",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
