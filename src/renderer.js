@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.22',
+  appVersion: '0.4.23',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -56,7 +56,7 @@ function switchView(view) {
   syncContentHeaderFade(view === 'content' ? $('#view-content').scrollTop : 0, view === 'content');
   if (view === 'content') { refreshCapabilities().then(async () => { await renderContent(); await searchContent(true); }); }
   if (view === 'logs') reloadLogs();
-  if (view === 'settings') { renderSettings(); refreshAccountTokenStatus(); }
+  if (view === 'settings') { renderSettings(); refreshAccountTokenStatus(); syncSettingsHeading($('#view-settings').scrollTop); }
 }
 
 function renderAccount() {
@@ -281,27 +281,26 @@ async function submitLauncherLogin() {
       $('#launcherLoginStatus').classList.add('error');
       return;
     }
+    if (r.account) { state.account=r.account; renderAccount(); refreshAccountTokenStatus(); }
     if (r.needLink) {
-      $('#launcherLoginStatus').textContent=`${r.username||username} 계정 로그인 완료. 인증 사이트에서 Microsoft Minecraft 계정을 처음 한 번 연결해 주세요.`;
+      $('#launcherLoginStatus').textContent=`${r.username||username} EasyCraft 계정 로그인은 완료되었습니다. Minecraft를 사용하려면 인증 사이트에서 Microsoft 계정을 한 번 연결해 주세요.`;
       $('#launcherLoginStatus').classList.remove('error');
       $('#minecraftLinkBox').classList.remove('hidden');
       $('#launcherLoginConfirmBtn').classList.add('hidden');
-      toast('EasyCraft 계정 로그인 완료 · Minecraft 계정을 한 번 연결해 주세요.');
+      toast('EasyCraft 계정 로그인 완료 · Minecraft 연결이 필요합니다.');
       return;
     }
     if (r.needRelink) {
-      $('#launcherLoginStatus').textContent=`EasyCraft 계정 로그인은 성공했습니다. 다만 저장된 Microsoft 인증을 갱신하지 못했습니다. 아래 버튼으로 인증 사이트를 열어 Microsoft Minecraft 계정을 다시 연결해 주세요. (${r.error||'인증 갱신 실패'})`;
+      $('#launcherLoginStatus').textContent=`EasyCraft 계정 로그인은 완료되었습니다. 저장된 Minecraft 인증만 다시 연결해 주세요. (${r.error||'인증 갱신 실패'})`;
       $('#launcherLoginStatus').classList.add('error');
       $('#minecraftLinkBox').classList.remove('hidden');
       $('#launcherLoginConfirmBtn').classList.add('hidden');
-      toast('EasyCraft 로그인 성공 · Minecraft 계정 재연결이 필요합니다.');
+      toast('EasyCraft 계정 로그인 완료 · Minecraft 재연결이 필요합니다.');
       return;
     }
-    state.account=r.account;
-    renderAccount();
-    refreshAccountTokenStatus();
+    if (r.syncWarning) toast(`EasyCraft 로그인 완료 · Minecraft 동기화는 나중에 다시 시도합니다. (${r.syncWarning})`,true);
     closeModal('launcherLoginModal');
-    toast(`${r.account?.name||'Minecraft 계정'} 동기화 완료`);
+    toast(`${r.account?.name||r.username||'EasyCraft 계정'} 로그인 완료`);
   } catch(error) {
     $('#launcherLoginStatus').textContent=error?.message||String(error);
     $('#launcherLoginStatus').classList.add('error');
@@ -440,12 +439,12 @@ async function renderContent(checkUpdates=true) {
         ? `<label class="item-check" title="선택"><input type="checkbox" class="select-installed" ${selected?'checked':''}></label>`
         : '<span class="dependency-lock" title="다른 모드가 필요로 하는 필수 의존성">필수</span>';
     const typeIcon=state.contentType==='mods'?'M':state.contentType==='resourcepacks'?'R':state.contentType==='shaderpacks'?'S':'P';
-    const toggleButton=item.internalSystem||state.contentType==='modpacks'?'':`<button class="btn subtle small toggle">${item.enabled?'끄기':'켜기'}</button>`;
+    const toggleButton=state.contentType==='modpacks'?'':`<button class="mod-toggle-switch ${item.enabled?'enabled':'disabled'} toggle" type="button" role="switch" aria-checked="${item.enabled?'true':'false'}" title="${item.enabled?'클릭하여 모드 끄기':'클릭하여 모드 켜기'}"><span class="mod-toggle-track"><i></i></span><span class="mod-toggle-copy">${item.enabled?'켜짐':'꺼짐'}</span></button>`;
     const itemMeta=item.internalSystem
-      ? 'EasyCraft 시스템 모드 · Fabric 전용 · 자동 관리'
+      ? 'EasyCraft 시스템 항목 · 자동 관리'
       : `${item.managed?`Modrinth${item.versionNumber?` · ${esc(item.versionNumber)}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'}${state.contentType==='modpacks'?' · 적용됨':` · ${item.enabled?'사용 중':'꺼짐'}`}`;
     const actions=item.internalSystem
-      ? '<span class="system-badge">항상 적용</span>'
+      ? '<span class="system-badge">시스템</span>'
       : `${toggleButton}${item.managed&&!item.autoDependency&&state.contentUpdateProjects.has(item.projectId)?'<button class="btn subtle small update">업데이트</button>':''}<button class="btn danger small remove" ${item.autoDependency?'disabled title="필요한 모드를 먼저 삭제해 주세요."':''}>삭제</button>`;
     row.innerHTML=`${selector}${item.iconUrl?`<img class="result-icon" src="${esc(item.iconUrl)}" alt="">`:`<div class="result-placeholder">${item.internalSystem?'EC':typeIcon}</div>`}<div class="item-copy"><button class="content-name installed-name" type="button" ${item.internalSystem?'aria-disabled="true" tabindex="-1"':''}>${esc(item.title||item.displayName)}</button><span>${itemMeta}</span></div><div class="item-actions">${actions}</div>`;
     if(!item.internalSystem) row.querySelector('.installed-name')?.addEventListener('click',()=>openContentDetail(item));
@@ -453,7 +452,21 @@ async function renderContent(checkUpdates=true) {
       if(e.currentTarget.checked) state.selectedContent.add(key); else state.selectedContent.delete(key);
       row.classList.toggle('selected',e.currentTarget.checked); syncBulkControls();
     });
-    row.querySelector('.toggle')?.addEventListener('click',async()=>{const r=await api.toggleContent(inst.id,state.contentType,item.name);if(!r.ok)toast(r.error||'변경 실패',true);await refreshCapabilities();await renderContent();});
+    row.querySelector('.toggle')?.addEventListener('click',async e=>{
+      const button=e.currentTarget;if(button.disabled)return;
+      const previous=!!item.enabled;button.disabled=true;button.classList.add('busy');
+      const r=await api.toggleContent(inst.id,state.contentType,item.name);
+      button.disabled=false;button.classList.remove('busy');
+      if(!r.ok){toast(r.error||'변경 실패',true);return;}
+      item.enabled=typeof r.enabled==='boolean'?r.enabled:!previous;if(r.name)item.name=r.name;
+      button.classList.toggle('enabled',item.enabled);button.classList.toggle('disabled',!item.enabled);
+      button.setAttribute('aria-checked',item.enabled?'true':'false');button.title=item.enabled?'클릭하여 모드 끄기':'클릭하여 모드 켜기';
+      const copy=button.querySelector('.mod-toggle-copy');if(copy)copy.textContent=item.enabled?'켜짐':'꺼짐';
+      const meta=row.querySelector('.item-copy > span');if(meta&&!item.internalSystem){
+        meta.textContent=`${item.managed?`Modrinth${item.versionNumber?` · ${item.versionNumber}`:''}${item.autoDependency?' · 필수 의존성':''}`:'직접 추가한 파일'}${state.contentType==='modpacks'?' · 적용됨':` · ${item.enabled?'사용 중':'꺼짐'}`}`;
+      }
+      refreshCapabilities().catch(()=>{});
+    });
     row.querySelector('.update')?.addEventListener('click',async e=>{e.target.disabled=true;e.target.textContent='확인 중…';const r=await api.modrinthUpdate(inst.id,item.projectId);if(!r.ok)toast(r.error||'업데이트 실패',true);else{if(r.config){state.config=r.config;renderAll();}toast('업데이트를 적용했습니다.');state.contentUpdateProjects.delete(item.projectId);}await refreshCapabilities();await renderContent();});
     row.querySelector('.remove')?.addEventListener('click',async()=>{if(item.autoDependency||item.internalSystem)return;const yes=await askConfirm(`${item.title||item.displayName}을(를) 삭제할까요?`,'콘텐츠 삭제');if(!yes)return;const r=await api.deleteContent(inst.id,state.contentType,item.name);if(!r.ok)return toast(r.error||'삭제 실패',true);state.selectedContent.delete(key);await refreshCapabilities();await renderContent();toast(r.retainedAsDependency?'다른 모드에서 필요해 파일은 의존성으로 유지했습니다.':'삭제했습니다.');});
     installedFragment.appendChild(row);
@@ -741,18 +754,38 @@ function updateLogLiveState(){
   live.classList.toggle('running',active);
   label.textContent=active?'실시간 수신 중':'저장된 로그';
 }
-function setLogLines(lines=[]){
-  state.logLines=(lines||[]).slice(-3000);
+function classifyLogLine(line='') {
+  const text=String(line||'');
+  // 사용자 요청 색상: 위험=주황, 경고=빨강, 일반=기본 글자.
+  if (/(?:ERROR|FATAL|exception|crash(?:ed)?|failed|failure|경고)/i.test(text)) return 'warning';
+  if (/(?:WARN(?:ING)?|danger|risk|위험)/i.test(text)) return 'danger';
+  return 'normal';
+}
+function logLineNode(line='') {
+  const el=document.createElement('div');
+  el.className=`log-line log-line-${classifyLogLine(line)}`;
+  el.textContent=String(line);
+  return el;
+}
+function renderLogLines() {
   const term=$('#logTerminal');if(!term)return;
-  term.textContent=state.logLines.length?state.logLines.join('\n'):'아직 기록된 로그가 없습니다.';
+  const fragment=document.createDocumentFragment();
+  if(!state.logLines.length){const empty=document.createElement('div');empty.className='log-line log-line-normal log-empty';empty.textContent='아직 기록된 로그가 없습니다.';fragment.appendChild(empty);}
+  else for(const line of state.logLines) fragment.appendChild(logLineNode(line));
+  term.replaceChildren(fragment);
   if($('#logAutoScroll')?.checked)term.scrollTop=term.scrollHeight;
 }
-function appendLiveLog(info={}){
+function setLogLines(lines=[]) {
+  state.logLines=(lines||[]).slice(-3000);
+  renderLogLines();
+}
+function appendLiveLog(info={}) {
   const target=logTargetInstance();if(!target||info.instanceId!==target.id||!info.line)return;
   state.logLines.push(String(info.line));
   if(state.logLines.length>3000)state.logLines.splice(0,state.logLines.length-3000);
   const term=$('#logTerminal');if(!term||!$('#view-logs').classList.contains('active'))return;
-  term.textContent=state.logLines.join('\n');
+  term.appendChild(logLineNode(info.line));
+  while(term.children.length>3000)term.firstElementChild?.remove();
   if($('#logAutoScroll')?.checked)term.scrollTop=term.scrollHeight;
 }
 async function reloadLogs(){
@@ -761,7 +794,7 @@ async function reloadLogs(){
   if(!inst){state.logInstanceId=null;$('#logContext').textContent='먼저 인스턴스를 선택해 주세요.';setLogLines([]);return;}
   state.logInstanceId=inst.id;
   $('#logContext').textContent=`${inst.name} · Minecraft ${inst.version} 로그`;
-  $('#logTerminal').textContent='로그를 불러오는 중…';
+  $('#logTerminal').innerHTML='<div class="log-line log-line-normal log-empty">로그를 불러오는 중…</div>';
   const r=await api.getInstanceLogs(inst.id,1800);
   if(state.logInstanceId!==inst.id)return;
   if(!r?.ok){setLogLines([`로그를 불러오지 못했습니다: ${r?.error||'알 수 없는 오류'}`]);return;}
@@ -849,6 +882,11 @@ function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classLis
   heading.style.pointerEvents=progress>.92?'none':'auto';
 }
 $('#view-content').addEventListener('scroll',e=>syncContentHeaderFade(e.currentTarget.scrollTop,true),{passive:true});
+function syncSettingsHeading(scrollTop=0){
+  const heading=document.querySelector('#view-settings .settings-heading');if(!heading)return;
+  heading.classList.toggle('compact',Number(scrollTop||0)>64);
+}
+$('#view-settings').addEventListener('scroll',e=>syncSettingsHeading(e.currentTarget.scrollTop),{passive:true});
 
 // navigation
 $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));

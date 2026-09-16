@@ -1,4 +1,4 @@
 @echo off
-echo EasyCraft v0.4.22 uses an ngrok HTTPS tunnel.
+echo EasyCraft v0.4.23 uses an ngrok HTTPS tunnel.
 echo Run SET_NGROK_TUNNEL.bat instead.
 pause

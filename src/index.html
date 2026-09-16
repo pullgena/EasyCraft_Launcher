@@ -135,9 +135,10 @@
           </div>
           <div class="log-toolbar">
             <span class="log-live"><i></i><b id="logLiveState">대기 중</b></span>
+            <div class="log-level-legend" aria-label="로그 색상 안내"><span class="normal">일반</span><span class="danger">위험</span><span class="warning">경고</span></div>
             <label class="log-autoscroll"><input type="checkbox" id="logAutoScroll" checked /><span>자동 스크롤</span></label>
           </div>
-          <pre class="log-terminal" id="logTerminal">인스턴스를 선택하면 로그를 불러옵니다.</pre>
+          <div class="log-terminal" id="logTerminal" role="log" aria-live="polite">인스턴스를 선택하면 로그를 불러옵니다.</div>
         </section>
 
         <section class="view settings-view" id="view-settings">

@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 echo ===============================================
-echo  EasyCraft Launcher v0.4.22 Windows build
+echo  EasyCraft Launcher v0.4.23 Windows build
 echo ===============================================
 echo.
 echo Account server domain is already bundled. No server URL setup is required.

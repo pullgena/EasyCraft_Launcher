@@ -80,9 +80,9 @@ if (serverConfig.baseUrl !== 'https://waffle-gangway-actress.ngrok-free.dev') fa
 if (!main.includes("'ngrok-skip-browser-warning':'EasyCraft'")) fail('ngrok browser-warning bypass header is missing from account API requests');
 
 
-// v0.4.22 release / updater / Fabric HUD invariants.
+// v0.4.23 release / updater invariants.
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-if (pkg.version !== '0.4.22') fail('package version must be exactly 0.4.22');
+if (pkg.version !== '0.4.23') fail('package version must be exactly 0.4.23');
 if (pkg.dependencies?.['electron-updater'] !== '6.8.9') fail('electron-updater dependency changed unexpectedly');
 const githubPublisher = (pkg.build?.publish || []).find(p => p?.provider === 'github');
 if (!githubPublisher) fail('GitHub publish provider is missing');
@@ -100,27 +100,27 @@ for (const updaterInvariant of [
   if (!main.includes(updaterInvariant)) fail(`auto-update invariant missing: ${updaterInvariant}`);
 }
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'build-windows.yml'), 'utf8');
-if (!workflow.includes("github.event.release.tag_name == 'v0.4.22'")) fail('release workflow must require exact tag v0.4.22');
-for (const asset of ['EasyCraft-Launcher-Setup-0.4.22.exe', 'EasyCraft-Launcher-Setup-0.4.22.exe.blockmap', 'dist/latest.yml']) {
+if (!workflow.includes("github.event.release.tag_name == 'v0.4.23'")) fail('release workflow must require exact tag v0.4.23');
+for (const asset of ['EasyCraft-Launcher-Setup-0.4.23.exe', 'EasyCraft-Launcher-Setup-0.4.23.exe.blockmap', 'dist/latest.yml']) {
   if (!workflow.includes(asset)) fail(`release workflow is missing updater asset: ${asset}`);
 }
-if (!workflow.includes('gh release upload v0.4.22')) fail('release workflow does not upload updater files to v0.4.22');
+if (!workflow.includes('gh release upload v0.4.23')) fail('release workflow does not upload updater files to v0.4.23');
 
 
 
-// v0.4.22 non-blocking update UX.
+// v0.4.23 non-blocking update UX.
 for (const id of ['updateToast', 'updateToastTitle', 'updateToastText', 'updateToastActionBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.22 update toast UI is missing #${id}`);
+  if (!htmlIds.has(id)) fail(`v0.4.23 update toast UI is missing #${id}`);
 }
 for (const phrase of [
   '최신버전입니다!',
   '응답하지 못했습니다. 나중에 다시 시도하세요.',
   '업데이트를 확인하고 있습니다...'
 ]) {
-  if (!renderer.includes(phrase)) fail(`v0.4.22 updater message is missing: ${phrase}`);
+  if (!renderer.includes(phrase)) fail(`v0.4.23 updater message is missing: ${phrase}`);
 }
-if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.22');
-// v0.4.22 startup-order check.
+if (html.includes('startupGate') || renderer.includes('renderStartupUpdate(')) fail('blocking startup update gate must be removed in v0.4.23');
+// v0.4.23 startup-order check.
 // Use whitespace-tolerant regexes so GitHub Windows CRLF/formatting cannot create a false failure.
 if (!/await\s+createWindow\(\);\s*initAutoUpdater\(\);/.test(main)) {
   fail('startup order invalid: createWindow must run immediately before updater initialization');
@@ -133,30 +133,18 @@ if (!main.includes("autoUpdater.disableDifferentialDownload = false")) fail('NSI
 if (!pkg.build?.electronLanguages || !pkg.build.electronLanguages.includes('ko')) fail('Electron locale trimming is missing');
 if (!Array.isArray(pkg.build?.files) || !pkg.build.files.some(x => String(x).includes('**/*.map'))) fail('release package exclusions are missing');
 
-// Fabric-only EasyCraft system HUD.
-for (const required of [
-  'ensureMinecraftInGameHud(id, instance)',
-  "if (instance.loader !== 'fabric')",
-  'EasyCraft으로 실행됨',
-  "internalSystem: true",
-  "title: 'EasyCraft HUD'",
-  'patchCustomHudProfile(id)'
-]) {
-  if (!main.includes(required)) fail(`Fabric HUD invariant missing: ${required}`);
-}
-if (!renderer.includes('EasyCraft 시스템 모드 · Fabric 전용 · 자동 관리')) fail('locked EasyCraft HUD list item UI is missing');
-if (!renderer.includes("if(!item.internalSystem) row.querySelector('.installed-name')")) fail('EasyCraft HUD detail interaction is not blocked');
-if (!renderer.includes('!i.autoDependency&&!i.internalSystem')) fail('EasyCraft HUD bulk selection must be blocked');
+// v0.4.23: EasyCraft HUD feature is intentionally removed for now.
+if (main.includes('ensureMinecraftInGameHud(id, instance)')) fail('v0.4.23 must not auto-apply EasyCraft HUD');
+if (main.includes("name: '__easycraft_hud__'") || renderer.includes('EasyCraft 시스템 모드 · Fabric 전용 · 자동 관리')) fail('v0.4.23 must not expose EasyCraft HUD system mod');
 
-if (!main.includes("const candidates = ['customhud', 'customhud-ported']")) fail('EasyCraft HUD compatibility fallback for newer Fabric versions is missing');
 if (pkg.build?.nsis?.differentialPackage !== true) fail('NSIS differentialPackage optimization must be enabled');
 if (!fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8').includes('.update-toast{position:fixed;')) fail('update toast must stay fixed at the bottom center');
 
 
 
-// v0.4.22 direct Microsoft mode, legal documents, and generated intro.
+// v0.4.23 direct Microsoft mode, legal documents, and generated intro.
 for (const id of ['generatedIntro','directMicrosoftLoginBtn','legalModal','legalModalTitle','legalDocumentText','termsBtn','privacyBtn','thirdPartyBtn','accountDeletionBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.22 UI is missing #${id}`);
+  if (!htmlIds.has(id)) fail(`v0.4.23 UI is missing #${id}`);
 }
 for (const required of [
   "ipcMain.handle('login-direct-microsoft'",
@@ -166,41 +154,33 @@ for (const required of [
   "ipcMain.handle('read-legal-document'",
   "안녕하세요!"
 ]) {
-  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.22 feature invariant missing: ${required}`);
+  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.23 feature invariant missing: ${required}`);
 }
-if (!preload.includes('loginDirectMicrosoft') || !preload.includes('readLegalDocument')) fail('v0.4.22 preload APIs are missing');
+if (!preload.includes('loginDirectMicrosoft') || !preload.includes('readLegalDocument')) fail('v0.4.23 preload APIs are missing');
 if (!renderer.includes("directMicrosoftLogin()")) fail('direct Microsoft renderer flow is missing');
 if (!renderer.includes("startGeneratedIntro()")) fail('startup generated intro controller is missing');
-if (!fs.existsSync(path.join(root,'src','app-icon.png'))) fail('v0.4.22 launcher icon intro asset is missing');
-if (!html.includes('src="app-icon.png"')) fail('v0.4.22 intro does not use the EasyCraft launcher icon');
-if (html.includes('chatgpt-logo.png')) fail('v0.4.22 intro must not reference the old ChatGPT logo asset');
+if (!fs.existsSync(path.join(root,'src','app-icon.png'))) fail('v0.4.23 launcher icon intro asset is missing');
+if (!html.includes('src="app-icon.png"')) fail('v0.4.23 intro does not use the EasyCraft launcher icon');
+if (html.includes('chatgpt-logo.png')) fail('v0.4.23 intro must not reference the old ChatGPT logo asset');
 const styles = fs.readFileSync(path.join(root, 'src', 'styles.css'), 'utf8');
 for (const cls of ['.direct-microsoft-button{','.login-legal-links{','.legal-modal-card{','.legal-document{']) {
-  if (!styles.includes(cls)) fail(`v0.4.22 login/legal UI style is missing: ${cls}`);
+  if (!styles.includes(cls)) fail(`v0.4.23 login/legal UI style is missing: ${cls}`);
 }
 if (!styles.includes('.direct-microsoft-button small{')) fail('direct Microsoft helper text styling is missing');
-if (!html.includes('EasyCraft 런처 아이콘 시작 인트로')) fail('v0.4.22 launcher icon intro aria label is missing');
+if (!html.includes('EasyCraft 런처 아이콘 시작 인트로')) fail('v0.4.23 launcher icon intro aria label is missing');
 for (const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOTICE.txt','ACCOUNT_DELETION.txt']) {
   if (!fs.existsSync(path.join(root,'src','legal',legal))) fail(`legal document is missing: ${legal}`);
 }
 
-// v0.4.22 content UI / system lock / HUD activation fixes.
-if (!renderer.includes('data-tooltip="시스템 잠금"')) fail('system lock hover tooltip is missing');
-if (!renderer.includes('document.createDocumentFragment()')) fail('atomic content-list rendering is missing');
-if (!renderer.includes(".result-item[data-project-id]")) fail('incremental Modrinth install-state refresh is missing');
-if (renderer.includes('await renderContent();await searchContent();return true;')) fail('mod install still forces a full Modrinth search refresh');
-for (const required of [
-  "path.join(configDir, 'profiles')",
-  "path.join(configDir, 'config.json')",
-  "next.activeProfileName = targetName",
-  "next.enabled = true",
-  "path.join(profilesDir, `${targetName}.txt`)"
-]) {
-  if (!main.includes(required)) fail(`CustomHud activation fix is missing: ${required}`);
-}
+// v0.4.23 content/log/settings/login UX fixes.
+if (!renderer.includes('mod-toggle-switch')) fail('v0.4.23 intuitive mod toggle UI is missing');
+if (!renderer.includes('classifyLogLine')) fail('v0.4.23 colored log classification is missing');
+if (!renderer.includes('syncSettingsHeading')) fail('v0.4.23 sticky settings heading controller is missing');
+if (!renderer.includes('EasyCraft 계정 로그인은 완료되었습니다')) fail('v0.4.23 account-login recovery UI is missing');
+if (!main.includes('easyCraftSessionOnlySummary')) fail('v0.4.23 session-only account recovery is missing');
+if (!main.includes("accountServerSigned('/api/session/status'")) fail('v0.4.23 session status fallback is missing');
 
-
-// v0.4.22 server-side Microsoft session refresh.
+// v0.4.23 server-side Microsoft session refresh.
 for (const required of [
   "server-microsoft-refresh-v1",
   "_easycraftAuthFlow = 'account-server-v3'",
@@ -210,19 +190,19 @@ for (const required of [
   "refreshAccountFromServer(session=null)",
   "delete cloned.refresh_token"
 ]) {
-  if (!main.includes(required)) fail(`v0.4.22 server-side auth invariant missing: ${required}`);
+  if (!main.includes(required)) fail(`v0.4.23 server-side auth invariant missing: ${required}`);
 }
-if (!main.includes('EasyCraft Account Server v0.4.22 이상이 필요합니다')) fail('v0.4.22 launcher must reject an old account server without server refresh capability');
+if (!main.includes('EasyCraft Account Server v0.4.22 이상이 필요합니다')) fail('v0.4.23 launcher must reject an old account server without server refresh capability');
 if (!fs.readFileSync(path.join(root,'src','legal','PRIVACY_POLICY.txt'),'utf8').includes('전용 암호화 키로 AES-256-GCM')) fail('privacy policy must disclose server-side encrypted refresh-token storage');
-if (!main.includes("accountServerSigned('/api/token/status'")) fail('v0.4.22 token status API client is missing');
-if (!preload.includes('getAccountTokenStatus')) fail('v0.4.22 token status preload API is missing');
+if (!main.includes("accountServerSigned('/api/token/status'")) fail('v0.4.23 token status API client is missing');
+if (!preload.includes('getAccountTokenStatus')) fail('v0.4.23 token status preload API is missing');
 for (const id of ['tokenStatusRow','settingsTokenStatus','settingsTokenMeta','refreshTokenStatusBtn']) {
-  if (!htmlIds.has(id)) fail(`v0.4.22 token status UI is missing #${id}`);
+  if (!htmlIds.has(id)) fail(`v0.4.23 token status UI is missing #${id}`);
 }
-if (!renderer.includes('예상 남은 토큰 기간')) fail('v0.4.22 token remaining-days UI text is missing');
+if (!renderer.includes('예상 남은 토큰 기간')) fail('v0.4.23 token remaining-days UI text is missing');
 
 
-// v0.4.22 web-auth-site linking invariants.
+// v0.4.23 web-auth-site linking invariants.
 for (const required of [
   "web-microsoft-auth-v1",
   "accountServerSigned('/api/web-auth/create'",
@@ -230,10 +210,10 @@ for (const required of [
   "Microsoft 인증 사이트 열기",
   "인증 사이트가 열렸습니다. 사이트에서 Microsoft 인증을 완료한 뒤"
 ]) {
-  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.22 web-auth invariant missing: ${required}`);
+  if (![main, renderer, html].some(text => text.includes(required))) fail(`v0.4.23 web-auth invariant missing: ${required}`);
 }
-if (!main.includes("data?.protocol !== 'easycraft-account-v3-webauth'")) fail('v0.4.22 launcher must require easycraft-account-v3-webauth');
-if (!fs.readFileSync(path.join(root,'src','legal','PRIVACY_POLICY.txt'),'utf8').includes('EasyCraft 웹 인증 사이트')) fail('privacy policy must disclose the v0.4.22 web authentication site flow');
+if (!main.includes("data?.protocol !== 'easycraft-account-v3-webauth'")) fail('v0.4.23 launcher must require easycraft-account-v3-webauth');
+if (!fs.readFileSync(path.join(root,'src','legal','PRIVACY_POLICY.txt'),'utf8').includes('EasyCraft 웹 인증 사이트')) fail('privacy policy must disclose the v0.4.23 web authentication site flow');
 
 const conflictMarkers = ['<<<<<<<', '=======', '>>>>>>>'];
 for (const [name, text] of [['renderer.js', renderer], ['preload.js', preload], ['main.js', main], ['index.html', html]]) {
@@ -241,5 +221,5 @@ for (const [name, text] of [['renderer.js', renderer], ['preload.js', preload], 
 }
 
 if (!process.exitCode) {
-  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.22 updater + Fabric HUD + direct Microsoft + legal + launcher-icon intro + login UI fixes + server-side token refresh + token remaining-days status + web-auth-site + account-vault migration invariants checked.`);
+  console.log(`SMOKE OK: ${rendererIdRefs.size} UI ids, ${directHandlers.size} handlers, ${invoked.size} IPC invokes, v0.4.23 updater + mod/log/settings UX + direct Microsoft + legal + launcher-icon intro + login UI fixes + server-side token refresh + token remaining-days status + web-auth-site + account-vault migration invariants checked.`);
 }

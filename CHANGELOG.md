@@ -1,14 +1,12 @@
-# EasyCraft Launcher Changelog
+# EasyCraft Launcher v0.4.23
 
-## v0.4.22
-
-- EasyCraft 전용 Microsoft/Minecraft 웹 인증 사이트 연동 추가
-- 런처에서 일회용 인증 링크 생성 및 기본 브라우저 자동 열기
-- 인증 사이트에서 Microsoft Device Code 인증 완료 후 서버에 Minecraft 연결 정보 저장
-- EasyCraft 계정 로그인 시 서버 저장 정보를 이용한 Minecraft 세션 동기화
-- Microsoft refresh token을 클라이언트로 전달하지 않는 서버 중심 인증 구조 적용
-- 인증 링크 10분 만료 및 1회 사용 처리
-- 인증 사이트 세션/CSRF 보호 추가
-- 재연결 안내를 웹 인증 사이트 기준으로 변경
-- Account Server v0.4.22 `web-microsoft-auth-v1` 기능 확인 추가
-- 정식 Release 태그를 `v0.4.22`로 변경
+- 모드 켜기/끄기를 스위치 형태로 변경해 현재 상태를 한눈에 확인할 수 있도록 개선했습니다.
+- 모드 상태 변경 시 전체 목록을 다시 그리지 않고 해당 항목만 즉시 갱신하도록 개선했습니다.
+- EasyCraft HUD 기능을 임시 제거했습니다. 추후 별도 방식으로 다시 제공할 예정입니다.
+- 로그 레벨을 색상으로 구분했습니다: 일반 로그는 기본 색상, 위험(WARN)은 주황색, 경고/오류(ERROR/FATAL)는 빨간색으로 표시합니다.
+- 로그 화면에 색상 범례를 추가했습니다.
+- 설정 화면 제목이 스크롤에 따라 자연스럽게 위로 이동하고 상단에 작게 고정되도록 개선했습니다.
+- EasyCraft ID/PW 인증과 Microsoft/Minecraft 동기화를 분리해, Minecraft 인증 서버가 잠시 응답하지 않아도 EasyCraft 계정 로그인 자체는 유지되도록 수정했습니다.
+- Minecraft 계정 연결/재연결이 필요한 경우에도 EasyCraft 계정 로그인 상태가 정상적으로 표시되도록 수정했습니다.
+- 저장된 EasyCraft 세션이 있는 경우 Minecraft 동기화가 잠시 실패해도 계정 세션을 복구하도록 개선했습니다.
+- Release 태그: `v0.4.23`

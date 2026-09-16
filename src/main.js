@@ -216,7 +216,7 @@ async function loadSavedAccount() {
     accountRefreshedAt = Number(cached._easycraftRefreshedAt || 0);
   }
 
-  // v0.4.22: EasyCraft 계정 없이 Microsoft만 인증한 계정은
+  // v0.4.23: EasyCraft 계정 없이 Microsoft만 인증한 계정은
   // Weird Host 계정 서버를 거치지 않고 이 PC에서 직접 갱신합니다.
   if (cached && isDirectMicrosoftAccount(cached)) {
     try {
@@ -249,7 +249,14 @@ async function loadSavedAccount() {
       setTimeout(() => refreshAccountVisual(refreshed).catch(() => {}), 50).unref?.();
       return accountSummary(refreshed);
     } catch (error) {
-      if (error?.needLogin || error?.status === 401) await clearLauncherSession().catch(() => {});
+      if (error?.needLogin || error?.status === 401) {
+        await clearLauncherSession().catch(() => {});
+      } else {
+        try {
+          currentAccount = null;
+          return await loadSessionOnlyAccountSummary(session);
+        } catch {}
+      }
     }
   }
 
@@ -276,7 +283,7 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   await ensureBase();
-  // v0.4.22: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
+  // v0.4.23: 창을 가장 먼저 띄워 업데이트/로그 정리/계정 갱신 때문에 첫 화면이 늦어지지 않게 합니다.
   await createWindow();
   initAutoUpdater();
   cleanupOldLogs().catch(() => {});
@@ -811,8 +818,30 @@ async function refreshAccountFromVault(session=null, options={}) {
   if (!options?.migrateOnly) await uploadServerMicrosoftLink(refreshed, saved).catch(() => {});
   return refreshed;
 }
+function easyCraftSessionOnlySummary(login, extra={}) {
+  const minecraft=login?.minecraft || {};
+  return {
+    name: minecraft.name || login?.session?.username || 'EasyCraft 계정',
+    uuid: minecraft.uuid || null, skinUrl:null, faceUrl:null, faceOverlayUrl:null,
+    offlineCached:false, launcherUsername:login?.session?.username || null,
+    authMode:'easycraft-account', sessionOnly:true, ...extra
+  };
+}
+async function loadSessionOnlyAccountSummary(session) {
+  const data=await accountServerSigned('/api/session/status',{session,timeoutMs:10000});
+  return {
+    name:data?.minecraft?.name || data?.username || session?.username || 'EasyCraft 계정',
+    uuid:data?.minecraft?.uuid || null, skinUrl:null, faceUrl:null, faceOverlayUrl:null,
+    offlineCached:false, launcherUsername:data?.username || session?.username || null,
+    authMode:'easycraft-account', sessionOnly:true, serverLinked:!!data?.serverLinked
+  };
+}
+
 async function launcherAccountLogin(username, password) {
+  // v0.4.23: EasyCraft ID/PW 인증 성공과 Microsoft/Minecraft 동기화를 분리합니다.
+  // Microsoft 쪽이 일시적으로 느리거나 실패해도 EasyCraft 계정 로그인 자체는 성공합니다.
   const login = await accountServerLogin(username, password);
+  const sessionAccount = easyCraftSessionOnlySummary(login);
   if (login.serverLinked) {
     try {
       const account = await refreshAccountFromServer(login.session);
@@ -820,14 +849,13 @@ async function launcherAccountLogin(username, password) {
       return { session:login.session, needLink:false, needRelink:false, username:login.session.username, account:summary };
     } catch (error) {
       if (error?.needRelink) {
-        return { session:login.session, needLink:false, needRelink:true, username:login.session.username, error:String(error.message || error), technical:String(error?.technical || '') };
+        return { session:login.session, needLink:false, needRelink:true, username:login.session.username, account:sessionAccount, error:String(error.message || error), technical:String(error?.technical || '') };
       }
-      throw error;
+      return { session:login.session, needLink:false, needRelink:false, username:login.session.username, account:sessionAccount, syncWarning:friendlyMicrosoftAuthError(error), technical:String(error?.message || error || '') };
     }
   }
-  if (!login.vaultPresent) return { session:login.session, needLink:true, username:login.session.username };
+  if (!login.vaultPresent) return { session:login.session, needLink:true, needRelink:false, username:login.session.username, account:sessionAccount };
   try {
-    // 기존 v0.4.19 vault를 Microsoft 로그인이 가능한 PC에서 자동으로 v0.4.22 서버 보관 방식으로 마이그레이션합니다.
     const legacy = await refreshAccountFromVault(login.session, { migrateOnly:true });
     await uploadServerMicrosoftLink(legacy, login.session);
     const account = serverManagedAccount(legacy, login.session.username);
@@ -835,12 +863,8 @@ async function launcherAccountLogin(username, password) {
     return { session:login.session, needLink:false, needRelink:false, username:login.session.username, account:summary };
   } catch (error) {
     return {
-      session: login.session,
-      needLink: false,
-      needRelink: true,
-      username: login.session.username,
-      error: friendlyMicrosoftAuthError(error),
-      technical: String(error?.technical || error?.message || '')
+      session:login.session, needLink:false, needRelink:true, username:login.session.username, account:sessionAccount,
+      error:friendlyMicrosoftAuthError(error), technical:String(error?.technical || error?.message || '')
     };
   }
 }
@@ -1010,264 +1034,36 @@ async function readInstanceLogLines(id, maxLines = 1800) {
   return lines.slice(-Math.max(100, Math.min(5000, Number(maxLines) || 1800)));
 }
 
-// ---------- 실제 Minecraft 인게임 HUD ----------
-// Electron 투명창을 Minecraft 위에 얹는 방식은 사용하지 않는다.
-// Fabric 인스턴스에서는 client-side CustomHud를 EasyCraft 런타임 구성요소로 준비하고,
-// CustomHud의 BottomLeft 섹션에 EasyCraft 실행 표시를 추가한다.
-function hudRuntimeManifestPath(id) { return path.join(instanceDir(id), 'easycraft-hud-runtime.json'); }
-async function readHudRuntimeManifest(id) {
-  try {
-    const parsed = JSON.parse(await fsp.readFile(hudRuntimeManifestPath(id), 'utf8'));
-    return parsed && typeof parsed === 'object' ? parsed : { files: [] };
-  } catch { return { files: [] }; }
-}
-async function writeHudRuntimeManifest(id, data) {
-  await fsp.mkdir(instanceDir(id), { recursive: true });
-  await fsp.writeFile(hudRuntimeManifestPath(id), JSON.stringify(data, null, 2), 'utf8');
-}
-function hudRuntimeFileNames(manifest) {
-  return new Set((manifest?.files || []).flatMap(item => item?.fileName ? [item.fileName, `${item.fileName}.disabled`] : []));
-}
-async function cleanupInternalHudRuntime(id) {
-  const manifest = await readHudRuntimeManifest(id);
-  const mods = path.join(gameDir(id), 'mods');
-  for (const item of manifest.files || []) {
+// ---------- v0.4.23: EasyCraft HUD 임시 제거 ----------
+// 이전 버전이 EasyCraft 전용으로 설치했던 HUD 런타임만 안전하게 정리합니다.
+// 사용자가 직접 설치한 CustomHud 자체는 삭제하지 않습니다.
+function legacyHudRuntimeManifestPath(id) { return path.join(instanceDir(id), 'easycraft-hud-runtime.json'); }
+async function cleanupLegacyEasyCraftHud(id) {
+  let manifest = { files: [] };
+  try { manifest = JSON.parse(await fsp.readFile(legacyHudRuntimeManifestPath(id), 'utf8')) || manifest; } catch {}
+  const modsDir = path.join(gameDir(id), 'mods');
+  for (const item of Array.isArray(manifest.files) ? manifest.files : []) {
     if (!item?.fileName) continue;
-    await fsp.rm(path.join(mods, path.basename(item.fileName)), { force: true }).catch(() => {});
-    await fsp.rm(path.join(mods, `${path.basename(item.fileName)}.disabled`), { force: true }).catch(() => {});
+    const safe = path.basename(item.fileName);
+    await fsp.rm(path.join(modsDir, safe), { force:true }).catch(() => {});
+    await fsp.rm(path.join(modsDir, `${safe}.disabled`), { force:true }).catch(() => {});
   }
-  await writeHudRuntimeManifest(id, { loader: null, minecraftVersion: null, files: [], updatedAt: new Date().toISOString() });
-}
-function easyCraftHudBlock() {
-  return [
-    '# >>> EASYCRAFT_LAUNCHER_HUD >>>',
-    '==Section:BottomLeft,6,6,false==',
-    '&aEasyCraft으로 실행됨',
-    '# <<< EASYCRAFT_LAUNCHER_HUD <<<'
-  ].join('\n');
-}
-async function patchCustomHudProfile(id) {
-  // CustomHud v3/v4 stores profiles under config/custom-hud/profiles and only
-  // renders the profile selected by config.json. the previous release wrote profile1~3.txt
-  // in the parent directory, so modern CustomHud never loaded EasyCraft's HUD.
   const configDir = path.join(gameDir(id), 'config', 'custom-hud');
   const profilesDir = path.join(configDir, 'profiles');
-  const configFile = path.join(configDir, 'config.json');
-  await fsp.mkdir(profilesDir, { recursive: true });
-
-  const stripEasyCraftBlock = text => String(text || '')
-    .replace(/(?:^|\r?\n)# >>> EASYCRAFT_LAUNCHER_HUD >>>[\s\S]*?# <<< EASYCRAFT_LAUNCHER_HUD <<<(?:\r?\n|$)/g, '\n')
-    .trimEnd();
-  const safeProfileName = value => {
-    const name = String(value || '').trim().replace(/[\\/:*?"<>|]/g, '').slice(0, 80);
-    return name || 'EasyCraft';
-  };
-
-  let config = null;
-  try {
-    const raw = await fsp.readFile(configFile, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed;
-  } catch {}
-
-  const modernConfig = Number(config?.configVersion || 0) >= 2;
-  let targetName = modernConfig && config?.enabled !== false
-    ? safeProfileName(config?.activeProfileName || config?.activeProfile)
-    : 'EasyCraft';
-  let targetFile = path.join(profilesDir, `${targetName}.txt`);
-
-  // If the config points to a profile that no longer exists, use a dedicated
-  // EasyCraft profile and make it active so the HUD is guaranteed to render.
-  if (targetName !== 'EasyCraft') {
-    try { await fsp.access(targetFile); }
-    catch { targetName = 'EasyCraft'; targetFile = path.join(profilesDir, 'EasyCraft.txt'); }
-  }
-
-  let profileText = '';
-  try { profileText = await fsp.readFile(targetFile, 'utf8'); } catch {}
-  profileText = stripEasyCraftBlock(profileText);
-  if (profileText) profileText += '\n\n';
-  profileText += `${easyCraftHudBlock()}\n`;
-  await fsp.writeFile(targetFile, profileText, 'utf8');
-
-  // Modern CustomHud: ensure the profile is enabled and selected. Preserve
-  // the user's existing profile/order whenever there is a valid active one.
-  if (!config || modernConfig) {
-    const next = config && typeof config === 'object' ? { ...config } : {};
-    next.configVersion = 3;
-    if (typeof next.debugMode !== 'boolean') next.debugMode = false;
-    next.enabled = true;
-    next.activeProfileName = targetName;
-    delete next.activeProfile;
-    if (!Array.isArray(next.profiles)) next.profiles = [];
-    if (!next.profiles.some(x => x && x.name === targetName)) {
-      next.profiles.push({ name: targetName, key: 'key.keyboard.unknown', cycle: false });
-    }
-    if (!Array.isArray(next.toggleBinds)) next.toggleBinds = [];
-    await fsp.writeFile(configFile, JSON.stringify(next, null, 2), 'utf8');
-  } else {
-    // Legacy CustomHud fallback (older MC branches): leave its old config
-    // schema intact, but force the global enabled flag and patch profile1.txt.
-    try {
-      config.enabled = true;
-      await fsp.writeFile(configFile, JSON.stringify(config, null, 2), 'utf8');
-    } catch {}
-    const legacyProfile = path.join(configDir, 'profile1.txt');
-    let legacyText = '';
-    try { legacyText = await fsp.readFile(legacyProfile, 'utf8'); } catch {}
-    legacyText = stripEasyCraftBlock(legacyText);
-    if (legacyText) legacyText += '\n\n';
-    legacyText += `${easyCraftHudBlock()}\n`;
-    await fsp.writeFile(legacyProfile, legacyText, 'utf8');
-  }
-}
-
-function normalizedModToken(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-}
-async function activeManagedProjectRecord(id, projectId) {
-  const registry = await readRegistry(id);
-  const rec = registry.find(x => x.projectId === projectId || x.slug === projectId);
-  if (!rec || rec.disabled) return null;
-  const base = path.join(gameDir(id), rec.folder || 'mods', rec.fileName || '');
-  try { await fsp.access(base); return rec; } catch { return null; }
-}
-async function physicalModLooksPresent(id, project, expectedFileName = '') {
-  const mods = path.join(gameDir(id), 'mods');
-  await fsp.mkdir(mods, { recursive: true });
-  const names = await fsp.readdir(mods).catch(() => []);
-  if (expectedFileName && names.includes(expectedFileName)) return true;
-  const tokens = [project?.slug, project?.title].map(normalizedModToken).filter(x => x.length >= 5);
-  if (!tokens.length) return false;
-  return names.some(name => {
-    if (name.endsWith('.disabled')) return false;
-    const n = normalizedModToken(name);
-    return tokens.some(token => n.includes(token));
-  });
-}
-async function hudCompatibleFabricVersions(mcVersion, projectId) {
-  const params = new URLSearchParams({
-    include_changelog: 'false',
-    game_versions: JSON.stringify([mcVersion]),
-    loaders: JSON.stringify(['fabric'])
-  });
-  const versions = await fetchJson(`${MODRINTH_API}/project/${encodeURIComponent(projectId)}/version?${params}`);
-  return (versions || []).filter(v => v.status === 'listed' || !v.status).sort((a, b) => {
-    const rank = { release: 0, beta: 1, alpha: 2 };
-    const r = (rank[a.version_type] ?? 9) - (rank[b.version_type] ?? 9);
-    if (r !== 0) return r;
-    return new Date(b.date_published) - new Date(a.date_published);
-  });
-}
-async function collectHudRuntimePlan(instance, projectId, seen = new Set(), plan = []) {
-  if (!projectId || seen.has(projectId)) return plan;
-  seen.add(projectId);
-  const project = await getProject(projectId);
-  const versions = await hudCompatibleFabricVersions(instance.version, project.id || projectId);
-  const version = versions[0];
-  if (!version) throw new Error(`${project.title || project.slug || projectId}의 Minecraft ${instance.version}용 Fabric 버전을 찾을 수 없습니다.`);
-  for (const dep of version.dependencies || []) {
-    if (dep.dependency_type !== 'required') continue;
-    let depProjectId = dep.project_id || null;
-    if (!depProjectId && dep.version_id) {
-      try { depProjectId = (await getVersion(dep.version_id))?.project_id || null; } catch {}
-    }
-    if (depProjectId) await collectHudRuntimePlan(instance, depProjectId, seen, plan);
-  }
-  const file = chooseFile(version);
-  if (!file?.url || !file?.filename) throw new Error(`${project.title || project.slug || projectId} 다운로드 파일을 찾을 수 없습니다.`);
-  plan.push({ project, version, file });
-  return plan;
-}
-
-async function collectCompatibleEasyCraftHudPlan(instance) {
-  // CustomHud 본판은 많은 Fabric 버전을 지원하지만, 최신 Minecraft에서는
-  // 별도 포트 프로젝트가 먼저 대응되는 경우가 있다. 사용자가 버전을 바꿔도
-  // EasyCraft HUD 때문에 실행이 깨지지 않도록 호환 프로젝트를 순서대로 찾는다.
-  const candidates = ['customhud', 'customhud-ported'];
-  const errors = [];
-  for (const projectId of candidates) {
-    try {
-      return await collectHudRuntimePlan(instance, projectId, new Set(), []);
-    } catch (error) {
-      errors.push(`${projectId}: ${error?.message || error}`);
+  const strip = text => String(text || '').replace(/(?:^|\r?\n)# >>> EASYCRAFT_LAUNCHER_HUD >>>[\s\S]*?# <<< EASYCRAFT_LAUNCHER_HUD <<<(?:\r?\n|$)/g, '\n').trimEnd();
+  for (const dir of [configDir, profilesDir]) {
+    const entries = await fsp.readdir(dir, { withFileTypes:true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.txt')) continue;
+      const full = path.join(dir, entry.name);
+      const before = await fsp.readFile(full, 'utf8').catch(() => '');
+      const after = strip(before);
+      if (before !== after) await fsp.writeFile(full, after ? `${after}\n` : '', 'utf8').catch(() => {});
     }
   }
-  throw new Error(`Minecraft ${instance.version}용 EasyCraft Fabric HUD 구성요소를 찾지 못했습니다. ${errors.join(' / ')}`);
+  await fsp.rm(legacyHudRuntimeManifestPath(id), { force:true }).catch(() => {});
 }
-async function ensureMinecraftInGameHud(id, instance) {
-  // 현재 검증 가능한 True in-game HUD 경로는 Fabric용 CustomHud이다.
-  // Vanilla/Forge/NeoForge에서는 외부 오버레이로 속이지 않고 HUD 런타임만 정리한다.
-  if (instance.loader !== 'fabric') {
-    await cleanupInternalHudRuntime(id);
-    return { enabled: false, reason: 'unsupported-loader' };
-  }
-  await ensureInstanceFolders(id);
-  const oldManifest = await readHudRuntimeManifest(id);
-  // 이미 같은 Minecraft 버전에 맞는 EasyCraft HUD 런타임이 준비되어 있으면
-  // Modrinth 메타데이터를 다시 조회하지 않고 바로 재사용해 Fabric 실행을 빠르게 합니다.
-  if (oldManifest?.ready === true && oldManifest.loader === 'fabric' && oldManifest.minecraftVersion === instance.version) {
-    const modsDir = path.join(gameDir(id), 'mods');
-    const runtimeFiles = Array.isArray(oldManifest.files) ? oldManifest.files : [];
-    const present = await Promise.all(runtimeFiles.map(async item => {
-      if (!item?.fileName) return false;
-      try { await fsp.access(path.join(modsDir, path.basename(item.fileName))); return true; } catch { return false; }
-    }));
-    if (!runtimeFiles.length || present.every(Boolean)) {
-      await patchCustomHudProfile(id);
-      return { enabled: true, provider: 'EasyCraft HUD Runtime', cached: true };
-    }
-  }
-  const plan = await collectCompatibleEasyCraftHudPlan(instance);
-  const newFiles = [];
-  const modsDir = path.join(gameDir(id), 'mods');
-  const keepNames = new Set();
 
-  for (const item of plan) {
-    const projectId = item.project.id;
-    const ext = path.extname(item.file.filename) || '.jar';
-    const slug = safeId(item.project.slug || projectId) || 'runtime-mod';
-    const runtimeName = `easycraft-runtime-${slug}-${safeId(item.version.id)}${ext}`;
-    const oldRuntime = (oldManifest.files || []).find(x => x.projectId === projectId && x.versionId === item.version.id && x.fileName);
-    if (oldRuntime) {
-      const oldPath = path.join(modsDir, path.basename(oldRuntime.fileName));
-      try {
-        await fsp.access(oldPath);
-        keepNames.add(oldRuntime.fileName);
-        newFiles.push(oldRuntime);
-        continue;
-      } catch {}
-    }
-    const managed = await activeManagedProjectRecord(id, projectId);
-    const manuallyPresent = await physicalModLooksPresent(id, item.project, item.file.filename);
-    if (managed || manuallyPresent) continue;
-    keepNames.add(runtimeName);
-    const destination = path.join(modsDir, runtimeName);
-    let exists = false;
-    try { await fsp.access(destination); exists = true; } catch {}
-    if (!exists) await downloadFile(item.file.url, destination, item.file.hashes || {});
-    newFiles.push({
-      projectId,
-      slug: item.project.slug || null,
-      versionId: item.version.id,
-      versionNumber: item.version.version_number || null,
-      fileName: runtimeName
-    });
-  }
-
-  // EasyCraft가 이전에 넣은 런타임 jar 중 현재 버전에 더 이상 쓰지 않는 것만 제거한다.
-  for (const old of oldManifest.files || []) {
-    if (!old?.fileName || keepNames.has(old.fileName)) continue;
-    await fsp.rm(path.join(modsDir, path.basename(old.fileName)), { force: true }).catch(() => {});
-    await fsp.rm(path.join(modsDir, `${path.basename(old.fileName)}.disabled`), { force: true }).catch(() => {});
-  }
-  await writeHudRuntimeManifest(id, {
-    loader: 'fabric', minecraftVersion: instance.version, provider: 'EasyCraft HUD Runtime', ready: true,
-    files: newFiles, updatedAt: new Date().toISOString()
-  });
-  await patchCustomHudProfile(id);
-  return { enabled: true, provider: 'EasyCraft HUD Runtime' };
-}
 async function invalidateLoaderInstall(id) {
   // Minecraft 버전/로더 종류/로더 빌드가 바뀌면 이전 설치 결과를 재사용하지 않는다.
   await fsp.rm(path.join(gameDir(id), 'loader'), { recursive:true, force:true }).catch(() => {});
@@ -1376,14 +1172,14 @@ ipcMain.handle('login-launcher-account', async (_event, username, password) => {
       const result = await launcherAccountLogin(username, password);
       if (result.needLink) {
         send('status', { text: 'EasyCraft 로그인 완료 · Microsoft 로그인이 가능한 PC에서 Minecraft 계정을 한 번 연결해 주세요.', kind: 'info' });
-        return { ok:true, needLink:true, needRelink:false, username:result.username };
+        return { ok:true, needLink:true, needRelink:false, username:result.username, account:result.account };
       }
       if (result.needRelink) {
         send('status', { text: `EasyCraft 로그인 완료 · 저장된 Minecraft 인증이 만료되었거나 취소되었습니다. Microsoft 로그인이 가능한 PC에서 한 번 다시 연결해 주세요.`, kind: 'warning' });
-        return { ok:true, needLink:false, needRelink:true, username:result.username, error:result.error, technical:result.technical || '' };
+        return { ok:true, needLink:false, needRelink:true, username:result.username, account:result.account, error:result.error, technical:result.technical || '' };
       }
       send('status', { text: `${result.account?.name || 'Minecraft 계정'} 동기화 완료`, kind: 'success' });
-      return { ok:true, needLink:false, needRelink:false, account:result.account, username:result.username };
+      return { ok:true, needLink:false, needRelink:false, account:result.account, username:result.username, syncWarning:result.syncWarning || '' };
     } catch (error) {
       const isAccountServerError = error?.scope === 'account-server' || error?.scope === 'account-server-config';
       const message = isAccountServerError ? friendlyAccountServerError(error) : friendlyMicrosoftAuthError(error);
@@ -1580,13 +1376,12 @@ async function enrichRegistryIcons(id, registry) {
   return registry;
 }
 ipcMain.handle('list-content', async (_event, id, type) => {
+  if (type === 'mods') await cleanupLegacyEasyCraftHud(id).catch(() => {});
   const folder = targetFolder(id, type); await fsp.mkdir(folder, { recursive: true });
   const meta = validateContentType(type); let registry = await managedForType(id, type); registry = await enrichRegistryIcons(id, registry);
   const byFile = new Map(registry.map(x => [x.fileName, x]));
-  const internalHudFiles = type === 'mods' ? hudRuntimeFileNames(await readHudRuntimeManifest(id)) : new Set();
   const names = await fsp.readdir(folder);
   const items = names.filter(name => {
-    if (internalHudFiles.has(name)) return false;
     const raw = name.endsWith('.disabled') ? name.slice(0, -9) : name;
     return meta.extensions.includes(path.extname(raw).toLowerCase());
   }).map(name => {
@@ -1606,28 +1401,9 @@ ipcMain.handle('list-content', async (_event, id, type) => {
       description: managed?.description || null
     };
   });
-  if (type === 'mods') {
-    const { instance } = await getInstance(id);
-    if (instance?.loader === 'fabric') {
-      const hudManifest = await readHudRuntimeManifest(id);
-      items.unshift({
-        name: '__easycraft_hud__', displayName: 'EasyCraft HUD', enabled: true, managed: false,
-        projectId: null, title: 'EasyCraft HUD', versionNumber: app.getVersion(), autoDependency: false,
-        internalSystem: true, iconUrl: null, projectType: 'mod', slug: 'easycraft-hud',
-        description: hudManifest?.ready === true
-          ? 'EasyCraft으로 실행됨 문구를 표시하는 Fabric 전용 시스템 HUD입니다.'
-          : 'Fabric 실행 시 자동으로 준비되는 EasyCraft 시스템 HUD입니다.'
-      });
-    }
-  }
-  return items.sort((a, b) => {
-    if (a.internalSystem && !b.internalSystem) return -1;
-    if (!a.internalSystem && b.internalSystem) return 1;
-    return (a.title || a.displayName).localeCompare(b.title || b.displayName);
-  });
+  return items.sort((a, b) => (a.title || a.displayName).localeCompare(b.title || b.displayName));
 });
 ipcMain.handle('toggle-content', async (_event, id, type, name) => {
-  if (type === 'mods' && String(name || '') === '__easycraft_hud__') return { ok: false, error: 'EasyCraft HUD는 런처가 자동으로 관리하는 시스템 모드입니다.' };
   const folder = targetFolder(id, type); const safe = path.basename(name);
   const from = path.join(folder, safe); const enabled = !safe.endsWith('.disabled');
   const newName = enabled ? `${safe}.disabled` : safe.slice(0, -9); const to = path.join(folder, newName);
@@ -1635,7 +1411,7 @@ ipcMain.handle('toggle-content', async (_event, id, type, name) => {
   const registry = await readRegistry(id);
   const item = registry.find(x => x.fileName === (enabled ? safe : newName));
   if (item) { item.disabled = enabled; await writeRegistry(id, registry); }
-  return { ok: true };
+  return { ok: true, enabled: !enabled, name: newName };
 });
 
 async function deleteRegistryFile(id, record) {
@@ -1691,7 +1467,6 @@ async function uninstallManagedProject(id, projectId) {
   return { ok: true };
 }
 async function deleteContentEntry(id, type, name) {
-  if (type === 'mods' && String(name || '') === '__easycraft_hud__') return { ok: false, error: 'EasyCraft HUD는 삭제할 수 없는 시스템 모드입니다.' };
   const folder = targetFolder(id, type); const safe = path.basename(name);
   const registry = await readRegistry(id);
   const raw = safe.endsWith('.disabled') ? safe.slice(0, -9) : safe;
@@ -1719,10 +1494,8 @@ ipcMain.handle('delete-all-content', async (_event, id, type) => {
   try {
     const folder = targetFolder(id, type); await fsp.mkdir(folder, { recursive: true });
     const meta = validateContentType(type);
-    const internalHudFiles = type === 'mods' ? hudRuntimeFileNames(await readHudRuntimeManifest(id)) : new Set();
-    const names = (await fsp.readdir(folder)).filter(name => {
-      if (internalHudFiles.has(name)) return false;
-      const raw = name.endsWith('.disabled') ? name.slice(0, -9) : name;
+      const names = (await fsp.readdir(folder)).filter(name => {
+        const raw = name.endsWith('.disabled') ? name.slice(0, -9) : name;
       return meta.extensions.includes(path.extname(raw).toLowerCase());
     });
     let count = 0;
@@ -2607,13 +2380,8 @@ ipcMain.handle('launch-game', async (_event, id) => {
   const automatic = await applyAutomaticInstanceVersionUpdates(id, config, rawInstance);
   config = automatic.config;
   const instance = automatic.instance;
+  await cleanupLegacyEasyCraftHud(id).catch(() => {});
   await ensureInstanceFolders(id);
-  try {
-    await ensureMinecraftInGameHud(id, instance);
-  } catch (error) {
-    // HUD 준비 실패가 Minecraft 실행 자체를 막지는 않도록 한다.
-    await appendLauncherLog(id, `INGAME HUD WARNING ${error.message || error}`).catch(() => {});
-  }
   const settings = instance.settings;
   let offlineFiles = null;
   if (offlineFallback) {
