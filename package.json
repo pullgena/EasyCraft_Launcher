@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.24",
-  "description": "EasyCraft Launcher v0.4.24 - web-based EasyCraft login and Microsoft authentication, improved mod switch rendering",
+  "version": "0.4.25",
+  "description": "EasyCraft Launcher v0.4.25 - EasyCraft web login with server-brokered Minecraft sessions and one-time Microsoft linking",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",

@@ -1,9 +1,7 @@
-# EasyCraft Launcher v0.4.24
+# EasyCraft Launcher v0.4.25
 
-- EasyCraft 계정 로그인을 런처 내부 입력 방식에서 웹사이트 로그인 방식으로 변경했습니다.
-- 로그인 버튼을 누르면 일회용 EasyCraft 웹 로그인 페이지가 열립니다.
-- 웹사이트에서 EasyCraft ID/PW 로그인을 완료하면 런처가 자동으로 로그인 상태를 받아옵니다.
-- Minecraft 계정 연결이 필요한 경우 같은 웹사이트에서 `Microsoft 인증하기`를 눌러 인증할 수 있습니다.
-- Microsoft refresh token은 서버에 암호화해 보관하고 런처에는 전달하지 않습니다.
-- 모드 켜기/끄기 스위치가 Windows 기본 흰색 버튼처럼 표시되던 UI 버그를 수정했습니다.
-- v0.4.23의 모드/로그/설정 UI 개선과 자동 업데이트 기능을 유지합니다.
+- EasyCraft 계정은 Minecraft 실행 전 인증정보를 Account Server에서 받습니다.
+- Microsoft refresh token은 Account Server에만 암호화 저장합니다.
+- 다른 PC의 EasyCraft 런처는 Microsoft refresh API를 직접 호출하지 않습니다.
+- 최초 연결용 `Microsoft 계정 연결` 버튼을 설정에 추가했습니다.
+- 웹사이트의 Microsoft Device Code 인증 의존성을 제거했습니다.

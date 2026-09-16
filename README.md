@@ -1,17 +1,11 @@
-# EasyCraft Launcher v0.4.24
+# EasyCraft Launcher v0.4.25
 
-EasyCraft의 계정 로그인과 Microsoft/Minecraft 연결을 웹사이트에서 처리하는 버전입니다.
+## 인증 구조
 
-## 로그인 흐름
+1. EasyCraft 웹사이트에서 EasyCraft 계정으로 로그인합니다.
+2. Minecraft 계정이 아직 연결되지 않았다면 Microsoft 로그인이 가능한 PC의 **설정 > Microsoft 계정 연결**을 한 번 실행합니다.
+3. 받은 refresh token은 HTTPS로 EasyCraft Account Server에 보내고 서버에서 암호화 저장합니다.
+4. 이후 다른 PC는 EasyCraft 계정으로만 로그인합니다.
+5. 다른 PC는 Microsoft에 직접 refresh 요청을 하지 않고 Account Server에서 Minecraft 실행용 단기 인증정보만 받습니다.
 
-1. 런처에서 `로그인`을 누릅니다.
-2. 기본 브라우저에서 EasyCraft 로그인 사이트가 열립니다.
-3. 사이트에서 EasyCraft ID/PW로 로그인합니다. 비밀번호 원문은 SRP 방식으로 서버에 전송하지 않습니다.
-4. Minecraft 연결이 필요하면 같은 페이지에서 `Microsoft 인증하기`를 누릅니다.
-5. Microsoft 공식 로그인 페이지에서 인증을 완료합니다.
-6. 서버가 연결 정보를 암호화해 저장합니다.
-7. 런처가 웹 로그인 완료를 자동으로 감지하고 로그인 상태를 가져옵니다.
-
-## Release
-
-정식 Release 태그는 정확히 `v0.4.24`입니다.
+정식 Release 태그: `v0.4.25`

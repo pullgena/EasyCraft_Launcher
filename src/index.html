@@ -146,13 +146,13 @@
           <div class="settings-stream">
             <section class="setting-row">
               <div class="setting-index">01</div>
-              <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">로그인하지 않았습니다.</h3><p>로그인과 Microsoft/Minecraft 인증을 EasyCraft 웹사이트에서 진행하고, 연결된 계정을 서버에서 동기화합니다.</p></div>
+              <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">로그인하지 않았습니다.</h3><p>EasyCraft 로그인은 웹사이트에서 진행합니다. Minecraft 계정은 인증 가능한 PC에서 한 번 연결하면 이후 다른 PC는 EasyCraft 서버에서 실행 인증정보를 받습니다.</p></div>
               <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn" type="button">로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn" type="button">로그아웃</button></div>
             </section>
             <section class="setting-row hidden" id="tokenStatusRow">
               <div class="setting-index">02</div>
               <div class="setting-copy"><span>MICROSOFT TOKEN</span><h3 id="settingsTokenStatus">확인 중…</h3><p id="settingsTokenMeta">EasyCraft 계정에 저장된 Microsoft 연결 토큰의 예상 남은 기간을 표시합니다.</p></div>
-              <div class="setting-actions"><button class="setting-button" id="refreshTokenStatusBtn" type="button">새로고침</button></div>
+              <div class="setting-actions wrap"><button class="setting-button primary hidden" id="linkMicrosoftAccountBtn" type="button">Microsoft 계정 연결</button><button class="setting-button" id="refreshTokenStatusBtn" type="button">새로고침</button></div>
             </section>
             <section class="setting-row">
               <div class="setting-index">03</div>
@@ -203,11 +203,11 @@
       <div class="modal-head launcher-login-head"><div><span class="setting-label">EASYCRAFT WEB LOGIN</span><h2>웹사이트에서 로그인</h2></div><button class="close-btn" data-close="launcherLoginModal">×</button></div>
       <section class="launcher-login-hero">
         <div class="launcher-login-orb-wrap"><div class="launcher-login-orb">↗</div></div>
-        <div class="launcher-login-hero-copy"><strong>EasyCraft Web Account Access</strong><p>EasyCraft 계정 로그인과 Microsoft/Minecraft 인증을 브라우저 사이트에서 진행합니다.</p></div>
+        <div class="launcher-login-hero-copy"><strong>EasyCraft Web Account Access</strong><p>EasyCraft 계정 로그인은 브라우저에서 진행하고, Minecraft 인증은 서버 동기화 방식으로 사용합니다.</p></div>
       </section>
       <div class="launcher-login-panels">
         <div class="launcher-login-panel"><span>사이트 로그인</span><strong>ID/PW는 브라우저에서 입력</strong><small>런처에는 EasyCraft 비밀번호를 입력하지 않습니다.</small></div>
-        <div class="launcher-login-panel"><span>Microsoft 인증</span><strong>사이트에서 인증하기</strong><small>필요한 경우 같은 페이지에서 Microsoft 계정을 연결합니다.</small></div>
+        <div class="launcher-login-panel"><span>Minecraft 동기화</span><strong>서버에서 실행 인증정보 받기</strong><small>처음 한 번만 인증 가능한 PC에서 Microsoft 계정을 연결합니다.</small></div>
       </div>
       <button class="web-login-open-button" id="webLoginOpenBtn" type="button"><span class="web-login-mark">E</span><span><strong>EasyCraft 로그인 사이트 열기</strong><small>로그인 완료를 런처가 자동으로 확인합니다.</small></span><i>→</i></button>
       <div class="login-legal-links"><span>사용하기 전에</span><button type="button" data-legal="terms">이용약관</button><span>·</span><button type="button" data-legal="privacy">개인정보처리방침</button><span>을 확인해 주세요.</span></div>

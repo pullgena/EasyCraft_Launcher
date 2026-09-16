@@ -26,10 +26,10 @@ const invoked=new Set([...preload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].m
 const handled=new Set([...main.matchAll(/ipcMain\.handle\('([^']+)'/g)].map(m=>m[1]));
 for(const ch of [...invoked].sort()) if(!handled.has(ch)) fail('preload invokes missing IPC handler: '+ch);
 
-if(pkg.version!=='0.4.24') fail('package version must be 0.4.24');
-if(!workflow.includes("github.event.release.tag_name == 'v0.4.24'")) fail('release workflow must require v0.4.24');
-for(const asset of ['EasyCraft-Launcher-Setup-0.4.24.exe','EasyCraft-Launcher-Setup-0.4.24.exe.blockmap','dist/latest.yml']) if(!workflow.includes(asset)) fail('workflow missing '+asset);
-if(!workflow.includes('gh release upload v0.4.24')) fail('workflow must upload to v0.4.24 release');
+if(pkg.version!=='0.4.25') fail('package version must be 0.4.25');
+if(!workflow.includes("github.event.release.tag_name == 'v0.4.25'")) fail('release workflow must require v0.4.25');
+for(const asset of ['EasyCraft-Launcher-Setup-0.4.25.exe','EasyCraft-Launcher-Setup-0.4.25.exe.blockmap','dist/latest.yml']) if(!workflow.includes(asset)) fail('workflow missing '+asset);
+if(!workflow.includes('gh release upload v0.4.25')) fail('workflow must upload to v0.4.25 release');
 
 for(const inv of [
   "require('electron-updater')",
@@ -51,8 +51,14 @@ for(const req of [
 ]) if(!main.includes(req)) fail('web login main invariant missing: '+req);
 for(const req of ['startWebLogin','pollWebLogin']) if(!preload.includes(req)) fail('preload web login API missing: '+req);
 for(const id of ['launcherLoginModal','webLoginOpenBtn','webLoginReopenBtn','webLoginWait','launcherLoginStatus']) if(!idset.has(id)) fail('web login UI missing #'+id);
-if(html.includes('launcherAccountPassword')||html.includes('launcherAccountId')) fail('v0.4.24 launcher must not ask for EasyCraft ID/PW inside the app');
+if(html.includes('launcherAccountPassword')||html.includes('launcherAccountId')) fail('v0.4.25 launcher must not ask for EasyCraft ID/PW inside the app');
 if(!renderer.includes('startWebLogin()')||!renderer.includes('pollWebLoginNow()')) fail('renderer web login flow missing');
+if(!main.includes("server-issued-minecraft-session-v1")) fail('server-issued Minecraft session capability missing');
+if(!main.includes("launcher-microsoft-link-v1")) fail('one-time launcher Microsoft link capability missing');
+if(!main.includes('linkMinecraftToEasyCraftServer')) fail('one-time EasyCraft server linking flow missing');
+const refreshEasyCraftBlock=(main.match(/async function refreshEasyCraftAccount\(session=null\) \{[\s\S]*?\n\}/)||[''])[0];
+if(refreshEasyCraftBlock.includes('new Microsoft().refresh')||refreshEasyCraftBlock.includes('refreshAccountFromVault')) fail('EasyCraft account refresh must not contact Microsoft from the client');
+if(!idset.has('linkMicrosoftAccountBtn')) fail('missing #linkMicrosoftAccountBtn');
 
 // v0.4.23 switch bug regression: the literal \\n prefix made the base selector invalid on Windows.
 if(styles.includes('\\n\\n/* v0.4.23: intuitive mod switches')) fail('literal \\n tokens still corrupt the mod switch selector');
@@ -66,4 +72,4 @@ for(const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOT
 for(const marker of ['<<<<<<<','=======','>>>>>>>']) for(const [name,text] of [['main.js',main],['renderer.js',renderer],['preload.js',preload],['index.html',html]]) if(text.includes(marker)) fail(name+' contains git conflict marker');
 
 if(failed) process.exit(1);
-console.log(`SMOKE OK: ${refs.size} UI ids, ${invoked.size} IPC invokes, v0.4.24 web login + updater + switch regression checks passed.`);
+console.log(`SMOKE OK: ${refs.size} UI ids, ${invoked.size} IPC invokes, v0.4.25 server-brokered auth + updater + switch regression checks passed.`);

@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.24',
+  appVersion: '0.4.25',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -97,7 +97,13 @@ function renderTokenStatus() {
   const title = $('#settingsTokenStatus');
   const meta = $('#settingsTokenMeta');
   const btn = $('#refreshTokenStatusBtn');
+  const linkBtn = $('#linkMicrosoftAccountBtn');
   if (btn) btn.disabled = !!state.tokenStatusLoading;
+  if (linkBtn) {
+    const linked = !!state.tokenStatus?.linked || !!state.account?.serverLinked;
+    linkBtn.classList.toggle('hidden', linked);
+    linkBtn.disabled = !!state.tokenStatusLoading || !!state.accountLinkBusy;
+  }
   if (state.tokenStatusLoading) {
     title.textContent = '토큰 상태 확인 중…';
     meta.textContent = 'EasyCraft 계정 서버에서 Microsoft 연결 상태를 확인하고 있습니다.';
@@ -116,7 +122,7 @@ function renderTokenStatus() {
   }
   if (!status.linked) {
     title.textContent = 'Microsoft 계정 연결 필요';
-    meta.textContent = status.message || 'EasyCraft 계정에 Microsoft 연결 토큰이 아직 저장되지 않았습니다.';
+    meta.textContent = status.message || '인증 가능한 PC에서 한 번만 Microsoft 계정을 연결하면 이후 다른 PC는 서버 동기화만 사용합니다.';
     return;
   }
   const days = Math.max(0, Number(status.estimatedDaysRemaining || 0));
@@ -271,8 +277,8 @@ function login() {
 function webLoginStateText(r){
   const st=String(r?.state||'');
   if(st==='created'||st==='opened')return '웹사이트에서 EasyCraft ID와 비밀번호로 로그인해 주세요.';
-  if(st==='microsoft_required')return 'EasyCraft 로그인 완료 · 사이트에서 “Microsoft 인증하기”를 눌러 주세요.';
-  if(st==='microsoft_auth')return 'Microsoft/Minecraft 인증 완료를 기다리고 있습니다…';
+  if(st==='microsoft_required')return 'EasyCraft 로그인 완료 · 런처 설정에서 Microsoft 계정을 한 번 연결해 주세요.';
+  if(st==='microsoft_auth')return 'Microsoft/Minecraft 연결 상태를 확인하고 있습니다…';
   if(st==='redeemed')return '로그인 정보가 이미 런처로 전달되었습니다.';
   return r?.message||'웹 로그인 완료를 기다리고 있습니다…';
 }
@@ -283,7 +289,7 @@ async function pollWebLoginNow(){
     const r=await api.pollWebLogin(webLoginPollToken);
     if(!r?.ok){throw new Error(r?.error||'웹 로그인 상태를 확인하지 못했습니다.');}
     if(!r.pending&&r.account){
-      clearWebLoginPoll();state.account=r.account;renderAccount();refreshAccountTokenStatus();$('#launcherLoginStatus').textContent='로그인이 완료되었습니다.';$('#launcherLoginStatus').classList.remove('error');$('#webLoginWait').classList.add('hidden');closeModal('launcherLoginModal');toast(`${r.account?.name||r.username||'EasyCraft 계정'} 로그인 완료`);if(r.syncWarning)toast(`Minecraft 동기화는 나중에 다시 시도합니다. (${r.syncWarning})`,true);return;
+      clearWebLoginPoll();state.account=r.account;renderAccount();refreshAccountTokenStatus();$('#launcherLoginStatus').textContent='로그인이 완료되었습니다.';$('#launcherLoginStatus').classList.remove('error');$('#webLoginWait').classList.add('hidden');closeModal('launcherLoginModal');toast(`${r.account?.name||r.username||'EasyCraft 계정'} 로그인 완료`);if(r.account?.serverLinked===false)toast('Minecraft 계정이 아직 연결되지 않았습니다. 설정에서 Microsoft 계정을 한 번 연결해 주세요.',true);if(r.syncWarning)toast(`Minecraft 서버 동기화는 나중에 다시 시도합니다. (${r.syncWarning})`,true);return;
     }
     $('#webLoginWaitTitle').textContent=r.state==='microsoft_auth'?'Microsoft 인증 대기 중':'웹 로그인 대기 중';
     $('#webLoginWaitText').textContent=webLoginStateText(r);
@@ -896,7 +902,22 @@ $('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInst
 $('#deleteAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i||!state.installedItems.length)return;if(!(await askConfirm(`현재 ${contentTypeLabel()}를 모두 삭제할까요?`,'전체 삭제')))return;const btn=$('#deleteAllContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteAllContent(i.id,state.contentType);btn.textContent='전체 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'전체 삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast('전체 삭제가 완료되었습니다.');});
 $('#dependencyConfirmBtn').addEventListener('click',()=>closeDependencyPrompt(true));$('#dependencyCancelBtn').addEventListener('click',()=>closeDependencyPrompt(false));$('#confirmYesBtn').addEventListener('click',()=>closeConfirmPrompt(true));$('#confirmNoBtn').addEventListener('click',()=>closeConfirmPrompt(false));
 async function openReleaseNotes(){const version=state.update.availableVersion;if(!version)return toast('확인할 업데이트 버전이 없습니다.',true);const r=await api.openLauncherReleaseNotes(version);if(!r.ok)toast(r.error||'업데이트 내역을 열지 못했습니다.',true);}
+async function linkMicrosoftAccountOnThisPc(){
+  if(state.accountLinkBusy)return;
+  state.accountLinkBusy=true;renderTokenStatus();
+  const btn=$('#linkMicrosoftAccountBtn');if(btn)btn.textContent='연결 중…';
+  try{
+    const result=await api.linkMinecraftAccount();
+    if(!result?.ok)throw new Error(result?.error||'Microsoft/Minecraft 계정을 연결하지 못했습니다.');
+    if(result.account){state.account=result.account;state.account.serverLinked=true;renderAccount();}
+    state.tokenStatus=null;
+    await refreshAccountTokenStatus();
+    toast(`${result.minecraft?.name||result.account?.name||'Minecraft 계정'} 서버 연결 완료`);
+  }catch(error){toast(error?.message||String(error),true)}
+  finally{state.accountLinkBusy=false;if(btn)btn.textContent='Microsoft 계정 연결';renderTokenStatus();}
+}
 $('#refreshTokenStatusBtn').addEventListener('click',refreshAccountTokenStatus);
+$('#linkMicrosoftAccountBtn').addEventListener('click',linkMicrosoftAccountOnThisPc);
 $('#settingsReleaseNotesBtn').addEventListener('click',openReleaseNotes);
 $('#updateToastNotesBtn').addEventListener('click',openReleaseNotes);
 $('#manualUpdateCheckBtn').addEventListener('click',async()=>{await api.checkLauncherUpdate();});
@@ -936,7 +957,7 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.24';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.25';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 
