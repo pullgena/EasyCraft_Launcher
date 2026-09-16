@@ -1,4 +1,4 @@
 {
   "baseUrl": "https://waffle-gangway-actress.ngrok-free.dev",
-  "protocol": "easycraft-account-v2-srp"
+  "protocol": "easycraft-account-v3-webauth"
 }

@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.21',
+  appVersion: '0.4.22',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -282,7 +282,7 @@ async function submitLauncherLogin() {
       return;
     }
     if (r.needLink) {
-      $('#launcherLoginStatus').textContent=`${r.username||username} 계정 로그인 완료. Microsoft 로그인이 가능한 PC에서 처음 한 번 Minecraft 계정을 연결해 주세요.`;
+      $('#launcherLoginStatus').textContent=`${r.username||username} 계정 로그인 완료. 인증 사이트에서 Microsoft Minecraft 계정을 처음 한 번 연결해 주세요.`;
       $('#launcherLoginStatus').classList.remove('error');
       $('#minecraftLinkBox').classList.remove('hidden');
       $('#launcherLoginConfirmBtn').classList.add('hidden');
@@ -290,7 +290,7 @@ async function submitLauncherLogin() {
       return;
     }
     if (r.needRelink) {
-      $('#launcherLoginStatus').textContent=`EasyCraft 계정 로그인은 성공했습니다. 다만 저장된 Microsoft 인증을 갱신하지 못했습니다. 이 PC에서 아래 버튼으로 Minecraft 계정을 다시 연결해 주세요. (${r.error||'인증 갱신 실패'})`;
+      $('#launcherLoginStatus').textContent=`EasyCraft 계정 로그인은 성공했습니다. 다만 저장된 Microsoft 인증을 갱신하지 못했습니다. 아래 버튼으로 인증 사이트를 열어 Microsoft Minecraft 계정을 다시 연결해 주세요. (${r.error||'인증 갱신 실패'})`;
       $('#launcherLoginStatus').classList.add('error');
       $('#minecraftLinkBox').classList.remove('hidden');
       $('#launcherLoginConfirmBtn').classList.add('hidden');
@@ -311,21 +311,21 @@ async function submitLauncherLogin() {
 }
 async function linkMinecraftAccount() {
   if (state.accountLoginBusy) return;
-  setLauncherLoginBusy(true,'연결 중…');
-  $('#launcherLoginStatus').textContent='Microsoft 로그인이 허용된 PC에서 로그인해 주세요. 연결 정보는 암호화되어 EasyCraft 계정에 저장됩니다.';
+  setLauncherLoginBusy(true,'사이트 여는 중…');
+  $('#launcherLoginStatus').textContent='EasyCraft 인증 사이트를 열고 있습니다…';
   $('#launcherLoginStatus').classList.remove('error');
   try {
     const r=await api.linkMinecraftAccount();
     if(!r?.ok){
-      $('#launcherLoginStatus').textContent=r?.error||'Minecraft 계정을 연결하지 못했습니다.';
+      $('#launcherLoginStatus').textContent=r?.error||'인증 사이트를 열지 못했습니다.';
       $('#launcherLoginStatus').classList.add('error');
       return;
     }
-    state.account=r.account;
-    renderAccount();
-    refreshAccountTokenStatus();
-    closeModal('launcherLoginModal');
-    toast(`${r.account?.name||'Minecraft 계정'} 연결 완료`);
+    $('#launcherLoginStatus').textContent='인증 사이트가 열렸습니다. 사이트에서 Microsoft 인증을 완료한 뒤 이 창에서 ID/PW로 다시 로그인해 주세요.';
+    $('#launcherLoginStatus').classList.remove('error');
+    $('#minecraftLinkBtn').textContent='인증 사이트 다시 열기';
+    $('#launcherLoginConfirmBtn').classList.remove('hidden');
+    toast('Microsoft 인증 사이트가 열렸습니다. 인증 완료 후 다시 로그인해 주세요.');
   } catch(error) {
     $('#launcherLoginStatus').textContent=error?.message||String(error);
     $('#launcherLoginStatus').classList.add('error');
@@ -333,6 +333,7 @@ async function linkMinecraftAccount() {
     setLauncherLoginBusy(false);
   }
 }
+
 async function directMicrosoftLogin() {
   if (state.accountLoginBusy) return;
   setLauncherLoginBusy(true,'로그인 중…');
@@ -940,11 +941,11 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.21';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.22';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 
-    // v0.4.21: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
+    // v0.4.22: 네트워크 버전 목록은 UI를 막지 않고 백그라운드에서 갱신합니다.
     api.fetchVersions().then(vr=>{state.versions=vr?.versions||[];state.latest=vr?.latest||'latest_release';renderAll();}).catch(error=>console.warn('Minecraft 버전 목록 갱신 실패',error));
     refreshCapabilities().then(()=>renderAll()).catch(()=>{});
   } catch(error) {

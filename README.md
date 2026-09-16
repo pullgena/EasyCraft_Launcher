@@ -1,13 +1,15 @@
-# EasyCraft Launcher v0.4.21
+# EasyCraft Launcher v0.4.22
 
-EasyCraft Launcher v0.4.21 정식 버전 소스입니다.
+EasyCraft Launcher v0.4.22 정식 버전 소스입니다.
 
-## v0.4.21 핵심
-- EasyCraft 계정 로그인 시 설정에서 Microsoft refresh token의 **예상 남은 일수** 확인
-- 마지막 토큰 저장/갱신 시각 표시
-- 서버의 token-status-v1 API 사용
-- Account Server v0.4.21 필요
-- 자동 업데이트, Fabric HUD, EasyCraft 계정 동기화 기능 유지
+## v0.4.22 핵심
 
-## Release 태그
-정확히 `v0.4.21`을 사용합니다.
+- EasyCraft 계정에 Minecraft를 연결할 때 런처 내부 Microsoft 로그인 대신 웹 인증 사이트를 사용합니다.
+- EasyCraft 로그인 후 `Microsoft 인증 사이트 열기`를 누르면 10분짜리 일회용 링크가 발급됩니다.
+- 인증 사이트에서 Microsoft 공식 Device Code 로그인을 완료하면 Microsoft/Minecraft 연결 정보가 Account Server에 저장됩니다.
+- 이후 다른 PC에서는 같은 EasyCraft 계정으로 로그인하면 서버에 저장된 연결 정보를 바탕으로 Minecraft 실행 세션을 받습니다.
+- Microsoft refresh token은 런처로 내려오지 않고 서버에서 AES-256-GCM으로 암호화하여 보관합니다.
+- `EasyCraft 계정 없이 시작`의 직접 Microsoft 로그인 모드는 그대로 별도 동작합니다.
+- 자동 업데이트, Fabric EasyCraft HUD, Modrinth/인스턴스 기능은 유지됩니다.
+
+Account Server도 반드시 v0.4.22로 업데이트해야 합니다.
