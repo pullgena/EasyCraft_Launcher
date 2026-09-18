@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.26',
+  appVersion: '0.4.27',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -163,9 +163,12 @@ function renderHero() {
 function renderPlayButton() {
   const btn = $('#playBtn');
   if (state.launchState === 'preparing') btn.textContent = '■ 준비 중지';
+  else if (state.launchState === 'starting') btn.textContent = '● 창 여는 중…';
   else if (state.launchState === 'stopping') btn.textContent = '중지 요청됨';
-  else if (state.launchState === 'running') btn.textContent = '■ 게임 종료';
+  else if (state.launchState === 'running') btn.textContent = '● 실행 중 · 종료';
   else btn.textContent = '▶ 게임 실행';
+  btn.classList.toggle('launching',state.launchState==='preparing'||state.launchState==='starting');
+  btn.classList.toggle('game-running',state.launchState==='running');
   btn.disabled = !currentInstance();
 }
 function renderInstances() {
@@ -336,7 +339,7 @@ async function logout() {
 
 async function launchOrStop() {
   const inst=currentInstance(); if (!inst) return toast('인스턴스를 먼저 만들어 주세요.', true);
-  if (['preparing','running','stopping'].includes(state.launchState)) {
+  if (['preparing','starting','running','stopping'].includes(state.launchState)) {
     if (state.launchState === 'stopping') return;
     state.launchState='stopping'; renderPlayButton(); showLaunchPop('Minecraft 중지 중','실행 준비와 게임 프로세스를 종료하고 있습니다.',null,true);
     const r=await api.stopGame(inst.id);
@@ -355,13 +358,14 @@ async function launchOrStop() {
   if(r.offlineMode) toast('EasyCraft 계정 서버에 연결할 수 없어 저장된 계정으로 Vanilla 오프라인 모드를 사용합니다.');
   if(r.versionChanges?.length) toast(`자동 업데이트: ${r.versionChanges.join(' · ')}`);
 }
-function showLaunchPop(title,text,percent=null,showStop=true){ const el=$('#launchPop'); el.classList.remove('hidden'); $('#launchPopTitle').textContent=title; $('#launchPopText').textContent=text||''; if(percent!==null) $('#launchProgress').style.width=`${Math.max(0,Math.min(100,percent))}%`; $('#launchPopStopBtn').classList.toggle('hidden',!showStop); }
-function hideLaunchPop(){ $('#launchPop').classList.add('hidden'); $('#launchProgress').style.width='0%'; }
+function showLaunchPop(title,text,percent=null,showStop=true,mode='progress'){ const el=$('#launchPop'); el.classList.remove('hidden','success'); el.classList.toggle('success',mode==='success'); $('#launchPopTitle').textContent=title; $('#launchPopText').textContent=text||''; if(percent!==null) $('#launchProgress').style.width=`${Math.max(0,Math.min(100,percent))}%`; $('#launchPopStopBtn').classList.toggle('hidden',!showStop); }
+function hideLaunchPop(){ const el=$('#launchPop'); el.classList.add('hidden'); el.classList.remove('success'); $('#launchProgress').style.width='0%'; }
 function applyLaunchState(v={}) {
   state.launchState=v.state||'idle'; state.activeInstanceId=v.instanceId||state.activeInstanceId; renderPlayButton();
   if(state.launchState==='preparing') showLaunchPop('Minecraft 준비 중',v.name?`${v.name}을(를) 준비하고 있습니다.`:'필요한 파일을 확인하고 있습니다.',2,true);
+  else if(state.launchState==='starting') showLaunchPop('Minecraft 창 여는 중',v.name?`${v.name}이(가) 정상적으로 시작되는지 확인하고 있습니다.`:'게임 창이 열리는지 확인하고 있습니다.',96,true);
   else if(state.launchState==='stopping'){showLaunchPop('Minecraft 중지 중','종료 요청을 보냈습니다.',null,false);clearTimeout(applyLaunchState._stopT);applyLaunchState._stopT=setTimeout(hideLaunchPop,350);}
-  else if(state.launchState==='running'){ showLaunchPop('Minecraft 실행됨',v.name?`${v.name}이(가) 실행 중입니다.`:'게임이 실행 중입니다.',100,false); clearTimeout(applyLaunchState._t); applyLaunchState._t=setTimeout(hideLaunchPop,1800); }
+  else if(state.launchState==='running'){ showLaunchPop('Minecraft가 시작되었습니다!',v.name?`${v.name}이(가) 실행 중입니다. 즐거운 플레이 되세요!`:'게임이 실행 중입니다. 즐거운 플레이 되세요!',100,false,'success'); clearTimeout(applyLaunchState._t); applyLaunchState._t=setTimeout(hideLaunchPop,3000); }
   else { hideLaunchPop(); state.activeInstanceId=null; }
   updateLogLiveState();
 }
@@ -715,7 +719,7 @@ function logTargetInstance(){
 function updateLogLiveState(){
   const live=$('.log-live');const label=$('#logLiveState');if(!live||!label)return;
   const target=logTargetInstance();
-  const active=!!target && state.activeInstanceId===target.id && ['preparing','running','stopping'].includes(state.launchState);
+  const active=!!target && state.activeInstanceId===target.id && ['preparing','starting','running','stopping'].includes(state.launchState);
   live.classList.toggle('running',active);
   label.textContent=active?'실시간 수신 중':'저장된 로그';
 }
@@ -965,7 +969,7 @@ $('#uninstallYesBtn').addEventListener('click',async()=>{
 
 api.onAccountChanged(a=>{state.account=a;renderAccount();refreshAccountTokenStatus();});
 api.onStatus(s=>{if(s?.text)toast(s.text,s?.kind==='error');});
-api.onLaunchProgress(p=>{if(state.launchState!=='stopping')showLaunchPop('Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
+api.onLaunchProgress(p=>{if(state.launchState!=='stopping'&&state.launchState!=='running')showLaunchPop(state.launchState==='starting'?'Minecraft 창 여는 중':'Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
 api.onLaunchState(applyLaunchState);
 api.onLaunchError(msg=>{state.launchState='idle';renderPlayButton();hideLaunchPop();const text=String(msg||'알 수 없는 오류입니다.');toast(text.startsWith('Minecraft가 실행되지 않았습니다')?text:`Minecraft가 실행되지 않았습니다: ${text}`,true);if(state.account?.authMode==='easycraft-account'&&state.account?.launcherUsername)setTimeout(()=>toast('로그 탭에서 오류 로그 전체를 EasyCraft 서버로 보낼 수 있습니다.'),5200);});
 api.onLaunchClosed(()=>{state.launchState='idle';renderPlayButton();hideLaunchPop();});
@@ -978,7 +982,7 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.26';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.27';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 

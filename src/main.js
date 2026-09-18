@@ -15,7 +15,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.26 (Minecraft launcher; EasyCraft web login; server-brokered Minecraft session; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.27 (Minecraft launcher; EasyCraft web login; server-brokered Minecraft session; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -2229,6 +2229,7 @@ ipcMain.handle('modrinth-update-all', async (_event, id, type = null) => {
 });
 
 function launchReadyMarker(id) { return path.join(instanceDir(id), 'launch-ready.json'); }
+const MINECRAFT_START_CONFIRM_MS = 8000;
 async function writeLaunchReadyMarker(id, instance) {
   await fsp.writeFile(launchReadyMarker(id), JSON.stringify({ version: instance.version, loader: instance.loader, loaderVersion: instance.loaderVersion || null, at: new Date().toISOString() }), 'utf8').catch(() => {});
 }
@@ -2348,6 +2349,10 @@ function clearLaunchWatchdog(ref) {
   if (ref?.watchdog) clearInterval(ref.watchdog);
   if (ref) ref.watchdog = null;
 }
+function clearStartupConfirmation(ref) {
+  if (ref?.startupConfirmationTimer) clearTimeout(ref.startupConfirmationTimer);
+  if (ref) ref.startupConfirmationTimer = null;
+}
 function startLaunchWatchdog(ref) {
   clearLaunchWatchdog(ref);
   ref.watchdog = setInterval(() => {
@@ -2375,6 +2380,7 @@ function startLaunchWatchdog(ref) {
 function finishLaunchRef(ref, { error = null, closed = false, code = null } = {}) {
   if (activeLauncher !== ref) return;
   clearLaunchWatchdog(ref);
+  clearStartupConfirmation(ref);
   const id = ref.instanceId;
   const wasRunning = ref.state === 'running';
   const runtimeMs = ref.runningAt ? Math.max(0, Date.now() - ref.runningAt) : 0;
@@ -2411,6 +2417,7 @@ function retryLaunchWorker(ref, reason) {
   ref.lastActivityAt = Date.now();
   const old = ref.worker;
   ref.worker = null;
+  clearStartupConfirmation(ref);
   if (old) killWorkerTree(old);
   appendLauncherLog(ref.instanceId, `RETRY ${ref.attempt} reason=${reason}`);
   send('launch-progress', { percent: 3, text: '다운로드 연결이 끊겨 자동으로 다시 이어서 준비합니다…' });
@@ -2444,12 +2451,25 @@ function spawnMinecraftWorker(ref) {
     } else if (message.type === 'log') {
       send('game-log', { instanceId: ref.instanceId, line: message.line || '', at: message.at || new Date().toISOString() });
     } else if (message.type === 'running') {
-      ref.state = 'running';
-      ref.runningAt = Date.now();
+      // minecraft-java-core의 running 신호는 Java spawn 직전입니다. 시작 직후 종료를
+      // 성공으로 보여 주지 않도록 프로세스가 잠시 유지된 뒤에만 실행 성공을 확정합니다.
+      ref.state = 'starting';
+      ref.processStartedAt = Date.now();
       clearLaunchWatchdog(ref);
-      emitLaunchState('running', ref.instanceId, { name: ref.instance.name });
-      send('launch-progress', { percent: 100, text: 'Minecraft 실행 중' });
-      writeLaunchReadyMarker(ref.instanceId, ref.instance);
+      emitLaunchState('starting', ref.instanceId, { name: ref.instance.name });
+      send('launch-progress', { percent: 96, text: 'Minecraft 창을 여는 중…' });
+      clearStartupConfirmation(ref);
+      ref.startupConfirmationTimer = setTimeout(() => {
+        if (activeLauncher !== ref || ref.worker !== worker || ref.cancelRequested || ref.state !== 'starting') return;
+        ref.startupConfirmationTimer = null;
+        ref.state = 'running';
+        ref.runningAt = ref.processStartedAt || Date.now();
+        send('launch-progress', { percent: 100, text: 'Minecraft가 시작되었습니다!' });
+        emitLaunchState('running', ref.instanceId, { name: ref.instance.name, confirmed:true });
+        appendLauncherLog(ref.instanceId, 'LAUNCH CONFIRMED Minecraft process remained active after startup grace period');
+        writeLaunchReadyMarker(ref.instanceId, ref.instance);
+      }, MINECRAFT_START_CONFIRM_MS);
+      ref.startupConfirmationTimer.unref?.();
     } else if (message.type === 'error') {
       ref.workerTerminalMessage = true;
       const msg = launcherErrorMessage(message.error);
@@ -2480,6 +2500,7 @@ ipcMain.handle('stop-game', async (_event, id) => {
   ref.cancelRequested = true;
   ref.state = 'stopping';
   clearLaunchWatchdog(ref);
+  clearStartupConfirmation(ref);
   emitLaunchState('stopping', id);
 
   // 준비 다운로드와 실행된 Java가 같은 worker 프로세스 트리에 있으므로 한 번에 즉시 종료한다.
@@ -2613,12 +2634,14 @@ ipcMain.handle('launch-game', async (_event, id) => {
     lastActivityAt:Date.now(),
     watchdog:null,
     workerTerminalMessage:false,
-    runningAt:null
+    runningAt:null,
+    processStartedAt:null,
+    startupConfirmationTimer:null
   };
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.26 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.27 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

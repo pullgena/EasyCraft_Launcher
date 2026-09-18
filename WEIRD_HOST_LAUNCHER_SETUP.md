@@ -1,6 +1,6 @@
-# EasyCraft Launcher v0.4.26 + Weird Host
+# EasyCraft Launcher v0.4.27 + Weird Host
 
-Launcher v0.4.26는 Account Server v0.4.26의 아래 기능이 필요합니다.
+Launcher v0.4.27은 Account Server v0.4.26 이상의 아래 기능이 필요합니다.
 
 - `web-launcher-login-v1`
 - `web-easycraft-srp-login-v1`
