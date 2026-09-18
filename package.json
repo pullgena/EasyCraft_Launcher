@@ -1,7 +1,7 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.25",
-  "description": "EasyCraft Launcher v0.4.25 - EasyCraft web login with server-brokered Minecraft sessions and one-time Microsoft linking",
+  "version": "0.4.26",
+  "description": "EasyCraft Launcher v0.4.26 - launch failure detection and authenticated server error-log reporting",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",

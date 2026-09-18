@@ -1,7 +1,7 @@
 # EasyCraft Launcher 개인정보처리방침
 
 시행일: 2026-09-11
-버전: v0.4.25
+버전: v0.4.26
 
 EasyCraft는 기능 제공에 필요한 범위에서만 정보를 처리하도록 설계합니다. 로그인 방식에 따라 처리되는 정보가 다릅니다.
 
@@ -14,6 +14,7 @@ EasyCraft는 기능 제공에 필요한 범위에서만 정보를 처리하도�
 - 클라이언트에서 암호화한 Microsoft/Minecraft 인증 보관함 데이터
 - EasyCraft 계정에 연결된 Microsoft refresh token의 서버 암호화본
 - 서비스 운영 과정에서 호스팅 업체 또는 터널 서비스가 자동으로 생성할 수 있는 접속 로그(IP 주소, 요청 시각 등)
+- 사용자가 직접 “오류 로그 서버로 보내기”를 누른 경우, 선택한 인스턴스의 EasyCraft/Minecraft 실행 로그, 런처 버전, Minecraft/로더 버전, 운영체제 종류·버전 및 오류 보고서 식별정보
 
 ### EasyCraft 계정 없이 Microsoft로 시작할 때
 - Minecraft 닉네임 및 UUID
@@ -28,6 +29,7 @@ EasyCraft는 기능 제공에 필요한 범위에서만 정보를 처리하도�
 - Minecraft 실행 및 인증 갱신
 - 스킨/프로필 표시
 - 서비스 보안 및 오류 대응
+- 사용자가 요청한 오류 로그 수집·분석 및 실행 문제 진단
 
 ### EasyCraft 웹 로그인/인증 사이트를 사용할 때
 - 런처가 발급한 일회용 인증 링크/웹 세션 정보
@@ -47,10 +49,17 @@ EasyCraft Account Server는 Microsoft refresh token의 생성·교체 여부를 
 ## 4. EasyCraft 계정 보관함
 EasyCraft 계정 동기화 기능에서는 호환성/복구용 클라이언트 암호화 보관함과 함께 Microsoft refresh token을 계정 서버의 전용 암호화 키로 AES-256-GCM 암호화해 저장할 수 있습니다. 서버는 이 refresh token을 사용해 Microsoft/Xbox/Minecraft 인증을 자동 갱신하고, 다른 PC에는 refresh token이 아닌 현재 Minecraft 실행에 필요한 단기 access token만 전달합니다. Microsoft 비밀번호는 서버에 저장하지 않습니다.
 
+
+### 오류 로그 서버 전송
+오류 로그 전송은 자동으로 이루어지지 않으며, EasyCraft 계정으로 로그인한 사용자가 로그 화면의 전송 버튼을 직접 누른 경우에만 수행됩니다. 전송되는 로그에는 사용자 PC의 파일 경로, 모드/파일 이름, 실행 환경 정보 등이 포함될 수 있습니다. EasyCraft는 전송 전에 Microsoft/Minecraft access token·refresh token, EasyCraft 세션 키·서명 등 알려진 인증정보 패턴을 자동으로 마스킹하며, 서버에서도 다시 한 번 마스킹합니다.
+
+전송된 보고서는 EasyCraft Account Server의 `data/error-reports/` 영역에 저장될 수 있으며 오류 분석 및 수정 목적으로 사용됩니다. 공개 GitHub Issue 등에 원본 로그를 그대로 게시하지 마십시오.
+
 ## 5. 보유 및 삭제
 - 로컬 로그인 정보: 사용자가 로그아웃하거나 EasyCraft 사용자 데이터를 삭제할 때 제거할 수 있습니다.
 - EasyCraft 계정 세션: 로그아웃, 만료 또는 서버 정리 정책에 따라 제거됩니다.
 - EasyCraft 계정 및 연결 보관함: 계정 삭제가 처리되면 삭제하는 것을 원칙으로 합니다.
+- 사용자가 전송한 오류 로그: 오류 분석 및 서비스 개선에 필요한 기간 동안 보관한 뒤 운영자가 삭제합니다. 공개 운영 전 실제 보관기간을 정해 고지해야 합니다.
 - 법령상 별도 보관 의무가 있는 경우에는 해당 기간 동안 보관할 수 있습니다.
 
 현재 계정 삭제 절차는 `계정 및 개인정보 삭제 안내` 문서를 확인해 주세요.

@@ -1,7 +1,7 @@
-# EasyCraft Launcher v0.4.25
+# EasyCraft Launcher v0.4.26
 
-- EasyCraft 계정은 Minecraft 실행 전 인증정보를 Account Server에서 받습니다.
-- Microsoft refresh token은 Account Server에만 암호화 저장합니다.
-- 다른 PC의 EasyCraft 런처는 Microsoft refresh API를 직접 호출하지 않습니다.
-- 최초 연결용 `Microsoft 계정 연결` 버튼을 설정에 추가했습니다.
-- 웹사이트의 Microsoft Device Code 인증 의존성을 제거했습니다.
+- Minecraft가 실제로 실행되지 못하거나 시작 직후 비정상 종료되면 `Minecraft가 실행되지 않았습니다`를 표시합니다.
+- EasyCraft 계정 로그인 사용자에게만 `오류 로그 서버로 보내기` 버튼을 표시합니다.
+- 전송 시 현재 인스턴스의 보관된 런처/Minecraft 로그 전체를 묶어 Account Server로 보냅니다.
+- access token, refresh token, EasyCraft 세션/서명 값 등 인증정보는 전송 전에 자동 마스킹합니다.
+- Account Server의 서명된 로그인 세션이 있어야 로그 업로드가 승인됩니다.

@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.25',
+  appVersion: '0.4.26',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -79,6 +79,8 @@ function renderAccount() {
   $('#railLogoutBtn').classList.toggle('hidden', !account);
   $('#settingsLoginBtn').classList.toggle('hidden', !!account);
   $('#settingsLogoutBtn').classList.toggle('hidden', !account);
+  const canSendErrorLogs = account?.authMode === 'easycraft-account' && !!account?.launcherUsername;
+  $('#sendLogsBtn')?.classList.toggle('hidden', !canSendErrorLogs);
   $('#settingsAccountName').textContent = account
     ? `${account.name}${account.authMode === 'microsoft-direct' ? ' · Microsoft 직접 로그인' : (account.launcherUsername ? ` · EasyCraft ${account.launcherUsername}` : '')}${account.offlineCached ? ' · 오프라인 캐시' : ''}`
     : '로그인하지 않았습니다.';
@@ -348,7 +350,7 @@ async function launchOrStop() {
   }
   state.launchState='preparing'; state.activeInstanceId=inst.id; renderPlayButton(); showLaunchPop('Minecraft 준비 중',`${inst.name}을(를) 준비하고 있습니다.`,2,true);
   const r=await api.launchGame(inst.id);
-  if(!r.ok){ state.launchState='idle'; renderPlayButton(); hideLaunchPop(); if(r.needLogin){state.account=null;renderAccount();} toast(r.error||'Minecraft를 실행하지 못했습니다.',true); return; }
+  if(!r.ok){ state.launchState='idle'; renderPlayButton(); hideLaunchPop(); if(r.needLogin){state.account=null;renderAccount();} const reason=r.error||'알 수 없는 오류입니다.'; toast(reason.startsWith('Minecraft가 실행되지 않았습니다')?reason:`Minecraft가 실행되지 않았습니다: ${reason}`,true); return; }
   if(r.config){ state.config=r.config; renderHero(); renderInstances(); }
   if(r.offlineMode) toast('EasyCraft 계정 서버에 연결할 수 없어 저장된 계정으로 Vanilla 오프라인 모드를 사용합니다.');
   if(r.versionChanges?.length) toast(`자동 업데이트: ${r.versionChanges.join(' · ')}`);
@@ -764,6 +766,24 @@ async function reloadLogs(){
   setLogLines(r.lines||[]);
 }
 
+async function sendErrorLogsToServer(){
+  const inst=logTargetInstance();
+  const isEasyCraft=state.account?.authMode==='easycraft-account'&&!!state.account?.launcherUsername;
+  if(!isEasyCraft)return toast('EasyCraft 계정으로 로그인한 경우에만 오류 로그를 전송할 수 있습니다.',true);
+  if(!inst)return toast('로그를 보낼 인스턴스를 먼저 선택해 주세요.',true);
+  const yes=await askConfirm(`${inst.name}의 저장된 로그 전체를 EasyCraft 서버로 보낼까요?\n\nMicrosoft/Minecraft 토큰과 EasyCraft 인증값은 자동으로 가린 뒤 전송합니다.`,`오류 로그 서버로 보내기`);
+  if(!yes)return;
+  const btn=$('#sendLogsBtn');
+  btn.disabled=true;btn.textContent='로그 보내는 중…';
+  try{
+    const result=await api.sendErrorReport(inst.id);
+    if(!result?.ok)throw new Error(result?.error||'로그를 서버에 보내지 못했습니다.');
+    const suffix=result.truncated?' · 로그가 매우 커 최근 12MB만 포함됨':'';
+    toast(`오류 로그 전송 완료 · ${result.reportId}${suffix}`);
+  }catch(error){toast(error?.message||String(error),true)}
+  finally{btn.disabled=false;btn.textContent='오류 로그 서버로 보내기';}
+}
+
 function updateSettingsText(u=state.update){
   const version=state.appVersion, title=$('#updateStatusTitle'), text=$('#updateStatusText'), action=$('#settingsUpdateActionBtn'), notes=$('#settingsReleaseNotesBtn'), progress=$('#updateProgress'), check=$('#manualUpdateCheckBtn');
   progress.style.width=`${u.percent||0}%`; action.classList.add('hidden'); action.dataset.action=''; action.disabled=false; check.textContent='업데이트 확인';
@@ -853,6 +873,7 @@ $('#view-settings').addEventListener('scroll',e=>syncSettingsHeading(e.currentTa
 
 // navigation
 $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+$('#sendLogsBtn').addEventListener('click',sendErrorLogsToServer);
 $('#refreshLogsBtn').addEventListener('click',reloadLogs);
 $('#clearLogsBtn').addEventListener('click',async()=>{
   const inst=logTargetInstance();if(!inst)return toast('인스턴스를 먼저 선택해 주세요.',true);
@@ -946,7 +967,7 @@ api.onAccountChanged(a=>{state.account=a;renderAccount();refreshAccountTokenStat
 api.onStatus(s=>{if(s?.text)toast(s.text,s?.kind==='error');});
 api.onLaunchProgress(p=>{if(state.launchState!=='stopping')showLaunchPop('Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
 api.onLaunchState(applyLaunchState);
-api.onLaunchError(msg=>{state.launchState='idle';renderPlayButton();hideLaunchPop();toast(`Minecraft 실행 실패: ${msg}`,true);});
+api.onLaunchError(msg=>{state.launchState='idle';renderPlayButton();hideLaunchPop();const text=String(msg||'알 수 없는 오류입니다.');toast(text.startsWith('Minecraft가 실행되지 않았습니다')?text:`Minecraft가 실행되지 않았습니다: ${text}`,true);if(state.account?.authMode==='easycraft-account'&&state.account?.launcherUsername)setTimeout(()=>toast('로그 탭에서 오류 로그 전체를 EasyCraft 서버로 보낼 수 있습니다.'),5200);});
 api.onLaunchClosed(()=>{state.launchState='idle';renderPlayButton();hideLaunchPop();});
 api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onGameLog(appendLiveLog);
@@ -957,7 +978,7 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.25';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.26';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 

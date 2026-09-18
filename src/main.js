@@ -6,6 +6,8 @@ const fsp = fs.promises;
 const crypto = require('crypto');
 const { Launch, Microsoft } = require('minecraft-java-core');
 const AdmZip = require('adm-zip');
+const zlib = require('zlib');
+const os = require('os');
 
 let mainWindow;
 let currentAccount = null;
@@ -13,7 +15,7 @@ let activeLauncher = null;
 const preparedLaunchers = new Map();
 let accountRefreshedAt = 0;
 
-const APP_UA = 'EasyCraftLauncher/0.4.25 (Minecraft launcher; EasyCraft web login; server-brokered Minecraft session; Modrinth integration)';
+const APP_UA = 'EasyCraftLauncher/0.4.26 (Minecraft launcher; EasyCraft web login; server-brokered Minecraft session; Modrinth integration)';
 const MODRINTH_API = 'https://api.modrinth.com/v2';
 const CONTENT_TYPES = {
   mods: { folder: 'mods', extensions: ['.jar'], projectType: 'mod' },
@@ -636,8 +638,8 @@ async function accountServerHealth() {
     err.scope = 'account-server'; err.stage = 'health';
     throw err;
   }
-  if (!Array.isArray(data?.capabilities) || !data.capabilities.includes('server-microsoft-refresh-v1') || !data.capabilities.includes('server-issued-minecraft-session-v1') || !data.capabilities.includes('launcher-microsoft-link-v1') || !data.capabilities.includes('token-status-v1') || !data.capabilities.includes('web-launcher-login-v1') || !data.capabilities.includes('web-easycraft-srp-login-v1')) {
-    const err = new Error('EasyCraft Account Server v0.4.25 이상이 필요합니다. Weird Host 서버를 먼저 업데이트해 주세요.');
+  if (!Array.isArray(data?.capabilities) || !data.capabilities.includes('server-microsoft-refresh-v1') || !data.capabilities.includes('server-issued-minecraft-session-v1') || !data.capabilities.includes('launcher-microsoft-link-v1') || !data.capabilities.includes('token-status-v1') || !data.capabilities.includes('web-launcher-login-v1') || !data.capabilities.includes('web-easycraft-srp-login-v1') || !data.capabilities.includes('error-report-upload-v1')) {
+    const err = new Error('EasyCraft Account Server v0.4.26 이상이 필요합니다. Weird Host 서버를 먼저 업데이트해 주세요.');
     err.scope = 'account-server'; err.stage = 'health';
     throw err;
   }
@@ -1094,6 +1096,88 @@ async function readInstanceLogLines(id, maxLines = 1800) {
   return lines.slice(-Math.max(100, Math.min(5000, Number(maxLines) || 1800)));
 }
 
+const ERROR_REPORT_MAX_RAW_BYTES = 12 * 1024 * 1024;
+const ERROR_REPORT_MAX_PACKED_BYTES = 5 * 1024 * 1024;
+function redactErrorReportText(input='') {
+  let text = String(input || '');
+  const rules = [
+    [/(Authorization\s*[:=]\s*Bearer\s+)[^\s"']+/gi, '$1[REDACTED]'],
+    [/(["']?(?:access_token|refresh_token|accessToken|refreshToken|sessionKeyB64|vaultKeyB64|password|passwd)["']?\s*[:=]\s*["']?)[^\s,"'}]+/gi, '$1[REDACTED]'],
+    [/(--accessToken(?:["']?\s*[,=:]?\s*["']?))[^\s,"']+/gi, '$1[REDACTED]'],
+    [/(X-EC-(?:Session|Signature|Nonce)\s*[:=]\s*)[^\s,"']+/gi, '$1[REDACTED]'],
+    [/\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{8,}\b/g, '[REDACTED_JWT]']
+  ];
+  for (const [pattern, replacement] of rules) text = text.replace(pattern, replacement);
+  return text;
+}
+async function buildFullErrorReport(id) {
+  const { instance } = await getInstance(id);
+  if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
+  const dir = logsDir(id);
+  const entries = await fsp.readdir(dir, { withFileTypes:true }).catch(() => []);
+  const rows = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.log')) continue;
+    const full = path.join(dir, entry.name);
+    const st = await fsp.stat(full).catch(() => null);
+    if (st) rows.push({ name:entry.name, full, mtime:st.mtimeMs, size:st.size });
+  }
+  rows.sort((a,b) => a.mtime - b.mtime);
+  if (!rows.length) throw new Error('서버로 보낼 로그가 없습니다.');
+
+  const chunks = [];
+  for (const row of rows) {
+    const text = await fsp.readFile(row.full, 'utf8').catch(() => '');
+    if (!text) continue;
+    chunks.push(`\n===== ${row.name} =====\n${text.replace(/\s+$/,'')}\n`);
+  }
+  let combined = redactErrorReportText(chunks.join(''));
+  let raw = Buffer.from(combined, 'utf8');
+  let truncated = false;
+  if (raw.length > ERROR_REPORT_MAX_RAW_BYTES) {
+    truncated = true;
+    raw = raw.subarray(raw.length - ERROR_REPORT_MAX_RAW_BYTES);
+    combined = `[EasyCraft] 로그 전체 크기가 12MB를 넘어 가장 최근 12MB만 포함했습니다.\n${raw.toString('utf8')}`;
+    raw = Buffer.from(combined, 'utf8');
+  }
+  const packed = zlib.gzipSync(raw, { level:6 });
+  if (packed.length > ERROR_REPORT_MAX_PACKED_BYTES) throw new Error('로그 압축 파일이 너무 큽니다. 로그를 지운 뒤 오류를 다시 재현하고 전송해 주세요.');
+  return {
+    instance,
+    body: {
+      reportType:'minecraft-launch-error',
+      launcherVersion:app.getVersion(),
+      instanceId:String(id),
+      instanceName:String(instance.name || 'Minecraft').slice(0,100),
+      minecraftVersion:String(instance.version || '').slice(0,80),
+      loader:String(instance.loader || 'vanilla').slice(0,40),
+      loaderVersion:String(instance.loaderVersion || '').slice(0,80),
+      platform:process.platform,
+      arch:process.arch,
+      osRelease:String(os.release() || '').slice(0,120),
+      createdAt:new Date().toISOString(),
+      fileCount:rows.length,
+      originalBytes:raw.length,
+      truncated,
+      compression:'gzip-base64',
+      logData:packed.toString('base64')
+    }
+  };
+}
+async function uploadInstanceErrorReport(id) {
+  const saved = await readLauncherSession();
+  const summary = accountSummary(currentAccount);
+  if (!saved?.sessionId || !saved?.sessionKeyB64 || summary?.authMode !== 'easycraft-account' || !summary?.launcherUsername) {
+    const err = new Error('오류 로그 전송은 EasyCraft 계정으로 로그인한 경우에만 사용할 수 있습니다.');
+    err.needLogin = true;
+    throw err;
+  }
+  await accountServerHealth();
+  const report = await buildFullErrorReport(id);
+  const data = await accountServerSigned('/api/error-report', { method:'POST', body:report.body, session:saved, timeoutMs:45000 });
+  return { ok:true, reportId:data.reportId, storedBytes:data.storedBytes || report.body.originalBytes, fileCount:report.body.fileCount, truncated:report.body.truncated };
+}
+
 // ---------- v0.4.23: EasyCraft HUD 임시 제거 ----------
 // 이전 버전이 EasyCraft 전용으로 설치했던 HUD 런타임만 안전하게 정리합니다.
 // 사용자가 직접 설치한 CustomHud 자체는 삭제하지 않습니다.
@@ -1167,6 +1251,10 @@ ipcMain.handle('get-instance-logs', async (_event, id, maxLines = 1800) => {
     if (!instance) throw new Error('인스턴스를 찾을 수 없습니다.');
     return { ok: true, instanceId: id, lines: await readInstanceLogLines(id, maxLines) };
   } catch (error) { return { ok: false, lines: [], error: error.message }; }
+});
+ipcMain.handle('send-error-report', async (_event, id) => {
+  try { return await uploadInstanceErrorReport(id); }
+  catch (error) { return { ok:false, needLogin:!!error?.needLogin, error:friendlyAccountServerError(error), technical:String(error?.message || error || '') }; }
 });
 ipcMain.handle('clear-instance-logs', async (_event, id) => {
   try {
@@ -2278,10 +2366,8 @@ function startLaunchWatchdog(ref) {
     } else {
       clearLaunchWatchdog(ref);
       if (oldWorker) killWorkerTree(oldWorker);
-      const msg = 'Minecraft 준비 작업이 오래 응답하지 않아 중단했습니다. 인터넷 연결과 설치된 모드 호환성을 확인해 주세요.';
-      send('launch-error', msg);
-      emitLaunchState('idle', ref.instanceId, { error: msg });
-      activeLauncher = null;
+      const msg = 'Minecraft가 실행되지 않았습니다. 준비 작업이 오래 응답하지 않아 중단했습니다. 인터넷 연결과 설치된 모드 호환성을 확인해 주세요.';
+      finishLaunchRef(ref, { error:msg });
     }
   }, 10000);
   ref.watchdog.unref?.();
@@ -2291,16 +2377,25 @@ function finishLaunchRef(ref, { error = null, closed = false, code = null } = {}
   clearLaunchWatchdog(ref);
   const id = ref.instanceId;
   const wasRunning = ref.state === 'running';
+  const runtimeMs = ref.runningAt ? Math.max(0, Date.now() - ref.runningAt) : 0;
+  const exitCode = Number.isFinite(Number(code)) ? Number(code) : null;
+  const didNotLaunch = closed && (!wasRunning || (exitCode !== null && exitCode !== 0 && runtimeMs < 8000));
+  let finalError = error ? String(error) : null;
+  if (!finalError && didNotLaunch) {
+    const codeText = exitCode !== null ? ` (종료 코드 ${exitCode})` : '';
+    finalError = `Minecraft가 실행되지 않았습니다${codeText}. 로그를 확인해 주세요.`;
+  }
   activeLauncher = null;
-  if (error) {
-    send('launch-error', error);
-    emitLaunchState('idle', id, { error });
+  if (finalError) {
+    appendLauncherLog(id, `LAUNCH FAILED ${finalError}`).catch(() => {});
+    send('launch-error', finalError);
+    emitLaunchState('idle', id, { error:finalError, didNotLaunch:true, code:exitCode });
   } else {
-    send('launch-closed', { instanceId:id, code });
+    send('launch-closed', { instanceId:id, code:exitCode, runtimeMs });
     emitLaunchState('idle', id);
   }
   cleanupOldLogs().catch(() => {});
-  if (closed && wasRunning && ref.instance?.settings?.autoUpdateContent) {
+  if (closed && wasRunning && !finalError && ref.instance?.settings?.autoUpdateContent) {
     setTimeout(async () => {
       try {
         const count = await updateAllManagedContent(id, ref.instance);
@@ -2350,6 +2445,7 @@ function spawnMinecraftWorker(ref) {
       send('game-log', { instanceId: ref.instanceId, line: message.line || '', at: message.at || new Date().toISOString() });
     } else if (message.type === 'running') {
       ref.state = 'running';
+      ref.runningAt = Date.now();
       clearLaunchWatchdog(ref);
       emitLaunchState('running', ref.instanceId, { name: ref.instance.name });
       send('launch-progress', { percent: 100, text: 'Minecraft 실행 중' });
@@ -2516,12 +2612,13 @@ ipcMain.handle('launch-game', async (_event, id) => {
     attempt:1,
     lastActivityAt:Date.now(),
     watchdog:null,
-    workerTerminalMessage:false
+    workerTerminalMessage:false,
+    runningAt:null
   };
   activeLauncher = ref;
   emitLaunchState('preparing', id, { name:instance.name });
   send('launch-progress', { percent:2, text:`${instance.name} 준비 중…` });
-  await appendLauncherLog(id, `LAUNCH 0.4.25 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
+  await appendLauncherLog(id, `LAUNCH 0.4.26 ${instance.name} mc=${instance.version} loader=${instance.loader} auth=${offlineFallback ? 'cached-offline' : 'online'} root=${root}`);
   startLaunchWatchdog(ref);
   spawnMinecraftWorker(ref);
   return { ok:true, isolatedWorker:true, config, versionChanges:automatic.changes, offlineMode:offlineFallback };

@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   stopGame: id => ipcRenderer.invoke('stop-game', id),
   getLaunchState: () => ipcRenderer.invoke('get-launch-state'),
   getInstanceLogs: (id, maxLines = 1800) => ipcRenderer.invoke('get-instance-logs', id, maxLines),
+  sendErrorReport: id => ipcRenderer.invoke('send-error-report', id),
   clearInstanceLogs: id => ipcRenderer.invoke('clear-instance-logs', id),
   updateLauncherSettings: patch => ipcRenderer.invoke('update-launcher-settings', patch),
 
