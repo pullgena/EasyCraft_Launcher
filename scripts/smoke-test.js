@@ -9,7 +9,6 @@ const main = read('src/main.js');
 const styles = read('src/styles.css');
 const pkg = JSON.parse(read('package.json'));
 const workflow = read('.github/workflows/build-windows.yml');
-const serverCfg = JSON.parse(read('src/account-server.json'));
 let failed=false;
 function fail(m){console.error('SMOKE FAIL: '+m);failed=true;}
 
@@ -26,10 +25,11 @@ const invoked=new Set([...preload.matchAll(/ipcRenderer\.invoke\('([^']+)'/g)].m
 const handled=new Set([...main.matchAll(/ipcMain\.handle\('([^']+)'/g)].map(m=>m[1]));
 for(const ch of [...invoked].sort()) if(!handled.has(ch)) fail('preload invokes missing IPC handler: '+ch);
 
-if(pkg.version!=='0.4.27') fail('package version must be 0.4.27');
-if(!workflow.includes("github.event.release.tag_name == 'v0.4.27'")) fail('release workflow must require v0.4.27');
-for(const asset of ['EasyCraft-Launcher-Setup-0.4.27.exe','EasyCraft-Launcher-Setup-0.4.27.exe.blockmap','dist/latest.yml']) if(!workflow.includes(asset)) fail('workflow missing '+asset);
-if(!workflow.includes('gh release upload v0.4.27')) fail('workflow must upload to v0.4.27 release');
+if(pkg.version!=='0.4.28') fail('package version must be 0.4.28');
+if(pkg.scripts?.['prepare:build']?.includes('configure-account-server')) fail('v0.4.28 build must not configure EasyCraft account server');
+if(!workflow.includes("github.event.release.tag_name == 'v0.4.28'")) fail('release workflow must require v0.4.28');
+for(const asset of ['EasyCraft-Launcher-Setup-0.4.28.exe','EasyCraft-Launcher-Setup-0.4.28.exe.blockmap','dist/latest.yml']) if(!workflow.includes(asset)) fail('workflow missing '+asset);
+if(!workflow.includes('gh release upload v0.4.28')) fail('workflow must upload to v0.4.28 release');
 
 for(const inv of [
   "require('electron-updater')",
@@ -38,48 +38,34 @@ for(const inv of [
   'scheduleAutomaticUpdateChecks()'
 ]) if(!main.includes(inv)) fail('updater invariant missing: '+inv);
 
-if(serverCfg.protocol!=='easycraft-account-v4-web-login') fail('account-server protocol must be easycraft-account-v4-web-login');
-if(serverCfg.baseUrl!=='https://waffle-gangway-actress.ngrok-free.dev') fail('bundled account server URL changed unexpectedly');
-for(const req of [
-  "data?.protocol !== 'easycraft-account-v4-web-login'",
-  "web-launcher-login-v1",
-  "web-easycraft-srp-login-v1",
-  "accountServerUnsigned('/api/launcher-login/create'",
-  "accountServerUnsigned('/api/launcher-login/redeem'",
-  "ipcMain.handle('start-web-login'",
-  "ipcMain.handle('poll-web-login'"
-]) if(!main.includes(req)) fail('web login main invariant missing: '+req);
-for(const req of ['startWebLogin','pollWebLogin']) if(!preload.includes(req)) fail('preload web login API missing: '+req);
-for(const id of ['launcherLoginModal','webLoginOpenBtn','webLoginReopenBtn','webLoginWait','launcherLoginStatus']) if(!idset.has(id)) fail('web login UI missing #'+id);
-if(html.includes('launcherAccountPassword')||html.includes('launcherAccountId')) fail('v0.4.27 launcher must not ask for EasyCraft ID/PW inside the app');
-if(!renderer.includes('startWebLogin()')||!renderer.includes('pollWebLoginNow()')) fail('renderer web login flow missing');
-if(!main.includes("server-issued-minecraft-session-v1")) fail('server-issued Minecraft session capability missing');
-if(!main.includes("launcher-microsoft-link-v1")) fail('one-time launcher Microsoft link capability missing');
-if(!main.includes('linkMinecraftToEasyCraftServer')) fail('one-time EasyCraft server linking flow missing');
-const refreshEasyCraftBlock=(main.match(/async function refreshEasyCraftAccount\(session=null\) \{[\s\S]*?\n\}/)||[''])[0];
-if(refreshEasyCraftBlock.includes('new Microsoft().refresh')||refreshEasyCraftBlock.includes('refreshAccountFromVault')) fail('EasyCraft account refresh must not contact Microsoft from the client');
-if(!idset.has('linkMicrosoftAccountBtn')) fail('missing #linkMicrosoftAccountBtn');
-if(!idset.has('sendLogsBtn')) fail('missing #sendLogsBtn');
-if(!preload.includes('sendErrorReport')) fail('preload error-report API missing');
-if(!main.includes("ipcMain.handle('send-error-report'")) fail('main error-report IPC missing');
-if(!main.includes("accountServerSigned('/api/error-report'")) fail('signed server error-report upload missing');
-if(!renderer.includes('sendErrorLogsToServer')) fail('renderer error-report UI flow missing');
+for(const forbiddenId of ['launcherLoginModal','webLoginOpenBtn','webLoginReopenBtn','webLoginWait','launcherLoginStatus','tokenStatusRow','linkMicrosoftAccountBtn','sendLogsBtn','accountDeletionBtn']) {
+  if(idset.has(forbiddenId)) fail('removed EasyCraft account UI still exists #'+forbiddenId);
+}
+for(const forbiddenApi of ['startWebLogin','pollWebLogin','loginLauncherAccount','linkMinecraftAccount','getAccountTokenStatus','sendErrorReport']) {
+  if(preload.includes(forbiddenApi)) fail('removed EasyCraft account preload API still exists: '+forbiddenApi);
+}
+for(const forbiddenIpc of ['start-web-login','poll-web-login','login-launcher-account','link-minecraft-account','get-account-token-status','send-error-report']) {
+  if(handled.has(forbiddenIpc)) fail('removed EasyCraft account IPC handler still exists: '+forbiddenIpc);
+}
+if(!preload.includes('loginDirectMicrosoft')) fail('Microsoft direct login API missing');
+if(!handled.has('login-direct-microsoft')) fail('Microsoft direct login IPC missing');
+if(!renderer.includes('api.loginDirectMicrosoft()')) fail('renderer does not start direct Microsoft login');
+if(!html.includes('Microsoft 로그인')) fail('Microsoft login UI text missing');
+if(!main.includes("_easycraftAuthFlow = 'direct-microsoft-v1'")) fail('direct Microsoft account persistence marker missing');
+if(!main.includes('EasyCraft 자체 계정 세션은 더 이상 사용하지 않습니다')) fail('legacy EasyCraft account-session migration missing');
 if(!main.includes('Minecraft가 실행되지 않았습니다')) fail('explicit launch failure message missing');
-for(const req of ['MINECRAFT_START_CONFIRM_MS = 8000','clearStartupConfirmation','startupConfirmationTimer',"emitLaunchState('starting'",'LAUNCH CONFIRMED']) if(!main.includes(req)) fail('confirmed startup invariant missing: '+req);
-for(const req of ['launch-success-visual','launch-success-check']) if(!html.includes(req)) fail('launch success UI missing: '+req);
-if(!styles.includes('.launch-pop.success')) fail('launch success animation styles missing');
-if(!renderer.includes("mode==='success'")) fail('launch success renderer mode missing');
 
-// v0.4.23 switch bug regression: the literal \\n prefix made the base selector invalid on Windows.
-if(styles.includes('\\n\\n/* v0.4.23: intuitive mod switches')) fail('literal \\n tokens still corrupt the mod switch selector');
+if(styles.includes('\\n\\n/* v0.4.23: intuitive mod switches')) fail('literal \\n tokens still corrupt mod switch selector');
 if(!styles.includes('.mod-toggle-switch{appearance:none;-webkit-appearance:none;border:0!important;outline:0;background:transparent!important;')) fail('mod toggle browser-default reset is missing');
 if(!renderer.includes('mod-toggle-switch')) fail('mod switch renderer is missing');
-
-for(const req of ['classifyLogLine','syncSettingsHeading']) if(!renderer.includes(req)) fail('v0.4.23 UX invariant missing: '+req);
+for(const req of ['classifyLogLine','syncSettingsHeading']) if(!renderer.includes(req)) fail('UX invariant missing: '+req);
 if(main.includes('ensureMinecraftInGameHud(id, instance)')) fail('EasyCraft HUD must remain removed');
-for(const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOTICE.txt','ACCOUNT_DELETION.txt']) if(!fs.existsSync(path.join(root,'src','legal',legal))) fail('missing legal document '+legal);
+
+for(const legal of ['TERMS_OF_SERVICE.txt','PRIVACY_POLICY.txt','THIRD_PARTY_NOTICE.txt']) if(!fs.existsSync(path.join(root,'src','legal',legal))) fail('missing legal document '+legal);
+if(fs.existsSync(path.join(root,'src','legal','ACCOUNT_DELETION.txt'))) fail('legacy EasyCraft account deletion document should be removed');
+for(const doc of ['src/legal/TERMS_OF_SERVICE.txt','src/legal/PRIVACY_POLICY.txt']) if(!read(doc).includes('v0.4.28')) fail(doc+' is not updated for v0.4.28');
 
 for(const marker of ['<<<<<<<','=======','>>>>>>>']) for(const [name,text] of [['main.js',main],['renderer.js',renderer],['preload.js',preload],['index.html',html]]) if(text.includes(marker)) fail(name+' contains git conflict marker');
 
 if(failed) process.exit(1);
-console.log(`SMOKE OK: ${refs.size} UI ids, ${invoked.size} IPC invokes, v0.4.27 confirmed startup feedback + server-brokered auth checks passed.`);
+console.log(`SMOKE OK: ${refs.size} UI ids, ${invoked.size} IPC invokes, v0.4.28 Microsoft-only login checks passed.`);

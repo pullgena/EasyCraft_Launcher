@@ -1,13 +1,13 @@
 {
   "name": "easycraft-launcher",
-  "version": "0.4.27",
-  "description": "EasyCraft Launcher v0.4.27 - confirmed Minecraft startup feedback and launch celebration",
+  "version": "0.4.28",
+  "description": "EasyCraft Launcher v0.4.28 - Microsoft-only login; EasyCraft account login removed",
   "main": "src/main.js",
   "author": "EasyCraft Launcher",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "prepare:build": "node scripts/configure-account-server.js && node scripts/write-build-info.js",
+    "prepare:build": "node scripts/write-build-info.js",
     "dist:win": "npm run prepare:build && electron-builder --win nsis",
     "dist:portable": "npm run prepare:build && electron-builder --win portable",
     "test:smoke": "node scripts/smoke-test.js"

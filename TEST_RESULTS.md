@@ -1,11 +1,12 @@
-# v0.4.27 테스트 결과
+# v0.4.28 테스트 결과
 
-- Node syntax check: PASS
-- Launcher smoke test: PASS
-- UI ID / IPC mapping: PASS
-- Minecraft 시작 확인 대기 상태 검사: PASS
-- 중앙 성공 애니메이션 UI 검사: PASS
-- Minecraft 실행 실패 문구 회귀 검사: PASS
-- EasyCraft 로그인 전용 오류 로그 기능 회귀 검사: PASS
+- JavaScript 문법 검사: PASS
+- HTML ID / renderer 참조 검사: PASS
+- preload IPC / main IPC 연결 검사: PASS
+- EasyCraft 웹 로그인 UI 제거 검사: PASS
+- EasyCraft 계정 서버 로그인 IPC 제거 검사: PASS
+- Microsoft 직접 로그인 API/IPC 검사: PASS
+- v0.4.28 GitHub Release/업데이트 자산 이름 검사: PASS
+- 기존 Minecraft 실행 실패 안내 및 Modrinth 스위치 회귀 검사: PASS
 
-`SMOKE OK: 145 UI ids, 49 IPC invokes, v0.4.27 confirmed startup feedback + server-brokered auth checks passed.`
+`SMOKE OK: v0.4.28 Microsoft-only login checks passed.`

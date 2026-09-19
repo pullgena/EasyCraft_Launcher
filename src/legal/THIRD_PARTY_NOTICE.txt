@@ -4,7 +4,7 @@
 
 ## 비공식 서비스 고지
 EasyCraft Launcher는 독립적으로 제작된 비공식 서드파티 Minecraft 런처입니다.
-Microsoft, Mojang Studios, Minecraft, Modrinth, GitHub, ngrok, Weird Host 및 OpenAI의 공식 제품이나 제휴·승인 제품이 아닙니다.
+Microsoft, Mojang Studios, Minecraft, Modrinth, GitHub 및 OpenAI의 공식 제품이나 제휴·승인 제품이 아닙니다.
 
 런처 시작 화면의 인트로는 EasyCraft 자체 런처 아이콘을 사용합니다.
 
@@ -13,8 +13,6 @@ Microsoft, Mojang Studios, Minecraft, Modrinth, GitHub, ngrok, Weird Host 및 Op
 - Mojang / Minecraft 다운로드 및 프로필 서비스
 - Modrinth API
 - GitHub Releases
-- ngrok
-- Weird Host
 
 각 서비스의 상표, 저작권, 이용약관과 개인정보 정책은 해당 권리자에게 귀속됩니다.
 

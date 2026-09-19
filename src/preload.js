@@ -5,14 +5,9 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   fetchVersions: () => ipcRenderer.invoke('fetch-versions'),
   fetchLoaderVersions: (loader, minecraftVersion) => ipcRenderer.invoke('fetch-loader-versions', loader, minecraftVersion),
   instanceVersionStatus: id => ipcRenderer.invoke('instance-version-status', id),
-  startWebLogin: () => ipcRenderer.invoke('start-web-login'),
-  pollWebLogin: pollToken => ipcRenderer.invoke('poll-web-login', pollToken),
-  loginLauncherAccount: (username, password) => ipcRenderer.invoke('login-launcher-account', username, password),
-  linkMinecraftAccount: () => ipcRenderer.invoke('link-minecraft-account'),
   loginDirectMicrosoft: () => ipcRenderer.invoke('login-direct-microsoft'),
   readLegalDocument: kind => ipcRenderer.invoke('read-legal-document', kind),
   logout: () => ipcRenderer.invoke('logout'),
-  getAccountTokenStatus: () => ipcRenderer.invoke('get-account-token-status'),
 
   createInstance: data => ipcRenderer.invoke('create-instance', data),
   selectInstance: id => ipcRenderer.invoke('select-instance', id),
@@ -46,7 +41,6 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   stopGame: id => ipcRenderer.invoke('stop-game', id),
   getLaunchState: () => ipcRenderer.invoke('get-launch-state'),
   getInstanceLogs: (id, maxLines = 1800) => ipcRenderer.invoke('get-instance-logs', id, maxLines),
-  sendErrorReport: id => ipcRenderer.invoke('send-error-report', id),
   clearInstanceLogs: id => ipcRenderer.invoke('clear-instance-logs', id),
   updateLauncherSettings: patch => ipcRenderer.invoke('update-launcher-settings', patch),
 

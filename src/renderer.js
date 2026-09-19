@@ -4,7 +4,7 @@ const $$ = s => [...document.querySelectorAll(s)];
 const state = {
   config: { instances: [], selectedInstanceId: null },
   account: null,
-  appVersion: '0.4.27',
+  appVersion: '0.4.28',
   versions: [],
   latest: 'latest_release',
   contentType: 'mods',
@@ -29,9 +29,7 @@ const state = {
   searchLoading: false,
   logLines: [],
   logInstanceId: null,
-  accountLoginBusy: false,
-  tokenStatus: null,
-  tokenStatusLoading: false
+  accountLoginBusy: false
 };
 
 function esc(v='') { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
@@ -56,19 +54,15 @@ function switchView(view) {
   syncContentHeaderFade(view === 'content' ? $('#view-content').scrollTop : 0, view === 'content');
   if (view === 'content') { refreshCapabilities().then(async () => { await renderContent(); await searchContent(true); }); }
   if (view === 'logs') reloadLogs();
-  if (view === 'settings') { renderSettings(); refreshAccountTokenStatus(); syncSettingsHeading($('#view-settings').scrollTop); }
+  if (view === 'settings') { renderSettings(); syncSettingsHeading($('#view-settings').scrollTop); }
 }
 
 function renderAccount() {
   const account = state.account;
   $('#accountName').textContent = account?.name || '로그인 필요';
   $('#accountSub').textContent = account
-    ? (account.offlineCached
-        ? '오프라인 캐시 사용 가능'
-        : (account.authMode === 'microsoft-direct'
-            ? 'Microsoft 직접 로그인'
-            : (account.launcherUsername ? `EasyCraft · ${account.launcherUsername}` : 'Microsoft 계정')))
-    : 'EasyCraft 또는 Microsoft';
+    ? (account.offlineCached ? '오프라인 캐시 사용 가능' : 'Microsoft 계정')
+    : 'Microsoft 계정';
   const avatar=$('#accountAvatar');
   const faceUrl = account?.faceUrl || null;
   const overlayUrl = account?.faceOverlayUrl || null;
@@ -79,71 +73,9 @@ function renderAccount() {
   $('#railLogoutBtn').classList.toggle('hidden', !account);
   $('#settingsLoginBtn').classList.toggle('hidden', !!account);
   $('#settingsLogoutBtn').classList.toggle('hidden', !account);
-  const canSendErrorLogs = account?.authMode === 'easycraft-account' && !!account?.launcherUsername;
-  $('#sendLogsBtn')?.classList.toggle('hidden', !canSendErrorLogs);
   $('#settingsAccountName').textContent = account
-    ? `${account.name}${account.authMode === 'microsoft-direct' ? ' · Microsoft 직접 로그인' : (account.launcherUsername ? ` · EasyCraft ${account.launcherUsername}` : '')}${account.offlineCached ? ' · 오프라인 캐시' : ''}`
+    ? `${account.name} · Microsoft${account.offlineCached ? ' · 오프라인 캐시' : ''}`
     : '로그인하지 않았습니다.';
-  renderTokenStatus();
-}
-function formatServerTime(seconds) {
-  if (!seconds) return '확인할 수 없음';
-  try { return new Date(Number(seconds) * 1000).toLocaleString('ko-KR'); } catch { return '확인할 수 없음'; }
-}
-function renderTokenStatus() {
-  const row = $('#tokenStatusRow');
-  if (!row) return;
-  const isEasyCraft = state.account?.authMode === 'easycraft-account' && !!state.account?.launcherUsername;
-  row.classList.toggle('hidden', !isEasyCraft);
-  if (!isEasyCraft) { state.tokenStatus = null; state.tokenStatusLoading = false; return; }
-  const title = $('#settingsTokenStatus');
-  const meta = $('#settingsTokenMeta');
-  const btn = $('#refreshTokenStatusBtn');
-  const linkBtn = $('#linkMicrosoftAccountBtn');
-  if (btn) btn.disabled = !!state.tokenStatusLoading;
-  if (linkBtn) {
-    const linked = !!state.tokenStatus?.linked || !!state.account?.serverLinked;
-    linkBtn.classList.toggle('hidden', linked);
-    linkBtn.disabled = !!state.tokenStatusLoading || !!state.accountLinkBusy;
-  }
-  if (state.tokenStatusLoading) {
-    title.textContent = '토큰 상태 확인 중…';
-    meta.textContent = 'EasyCraft 계정 서버에서 Microsoft 연결 상태를 확인하고 있습니다.';
-    return;
-  }
-  const status = state.tokenStatus;
-  if (!status) {
-    title.textContent = '토큰 상태를 확인해 주세요';
-    meta.textContent = '새로고침을 눌러 서버에 저장된 Microsoft 연결 상태를 확인할 수 있습니다.';
-    return;
-  }
-  if (status.error) {
-    title.textContent = '토큰 상태를 확인하지 못했습니다';
-    meta.textContent = status.error;
-    return;
-  }
-  if (!status.linked) {
-    title.textContent = 'Microsoft 계정 연결 필요';
-    meta.textContent = status.message || '인증 가능한 PC에서 한 번만 Microsoft 계정을 연결하면 이후 다른 PC는 서버 동기화만 사용합니다.';
-    return;
-  }
-  const days = Math.max(0, Number(status.estimatedDaysRemaining || 0));
-  title.textContent = `예상 남은 토큰 기간 · ${days}일`;
-  meta.textContent = `마지막 저장/갱신: ${formatServerTime(status.lastRotatedAt)} · Microsoft 기본 90일 기준 예상치이며 실제 토큰은 더 일찍 취소될 수 있습니다.`;
-}
-async function refreshAccountTokenStatus() {
-  const isEasyCraft = state.account?.authMode === 'easycraft-account' && !!state.account?.launcherUsername;
-  if (!isEasyCraft) { state.tokenStatus=null; renderTokenStatus(); return; }
-  if (state.tokenStatusLoading) return;
-  state.tokenStatusLoading = true; renderTokenStatus();
-  try {
-    const r = await api.getAccountTokenStatus();
-    state.tokenStatus = r?.ok ? r : { error:r?.error || '토큰 상태를 확인하지 못했습니다.' };
-  } catch (error) {
-    state.tokenStatus = { error:error?.message || String(error) };
-  } finally {
-    state.tokenStatusLoading = false; renderTokenStatus();
-  }
 }
 function renderHero() {
   const inst = currentInstance();
@@ -163,12 +95,9 @@ function renderHero() {
 function renderPlayButton() {
   const btn = $('#playBtn');
   if (state.launchState === 'preparing') btn.textContent = '■ 준비 중지';
-  else if (state.launchState === 'starting') btn.textContent = '● 창 여는 중…';
   else if (state.launchState === 'stopping') btn.textContent = '중지 요청됨';
-  else if (state.launchState === 'running') btn.textContent = '● 실행 중 · 종료';
+  else if (state.launchState === 'running') btn.textContent = '■ 게임 종료';
   else btn.textContent = '▶ 게임 실행';
-  btn.classList.toggle('launching',state.launchState==='preparing'||state.launchState==='starting');
-  btn.classList.toggle('game-running',state.launchState==='running');
   btn.disabled = !currentInstance();
 }
 function renderInstances() {
@@ -252,76 +181,32 @@ function openInstanceModal(id = currentInstance()?.id) {
   openModal('instanceModal');
 }
 
-function setLauncherLoginBusy(busy, text='처리 중…') {
+function setLauncherLoginBusy(busy) {
   state.accountLoginBusy = !!busy;
-  for (const id of ['webLoginOpenBtn','webLoginReopenBtn']) {
+  for (const id of ['railLoginBtn','settingsLoginBtn']) {
     const btn = $(`#${id}`);
-    if (btn) btn.disabled = !!busy;
-  }
-  const open = $('#webLoginOpenBtn');
-  if (open) {
-    const strong = open.querySelector('strong');
-    if (strong) strong.textContent = busy ? text : 'EasyCraft 로그인 사이트 열기';
+    if (btn) {
+      btn.disabled = !!busy;
+      if (!state.account) btn.textContent = busy ? 'Microsoft 로그인 중…' : 'Microsoft 로그인';
+    }
   }
 }
 
-let webLoginPollTimer=null;
-let webLoginPollToken='';
-let webLoginUrl='';
-let webLoginExpiresAt=0;
-function clearWebLoginPoll(){if(webLoginPollTimer){clearTimeout(webLoginPollTimer);webLoginPollTimer=null}}
-function login() {
+async function login() {
   if (state.account || state.accountLoginBusy) return;
-  clearWebLoginPoll();webLoginPollToken='';webLoginUrl='';webLoginExpiresAt=0;
-  $('#launcherLoginStatus').textContent='웹사이트에서 로그인을 시작해 주세요.';
-  $('#launcherLoginStatus').classList.remove('error');
-  $('#webLoginWait').classList.add('hidden');
-  $('#webLoginReopenBtn').classList.add('hidden');
-  openModal('launcherLoginModal');
-}
-function webLoginStateText(r){
-  const st=String(r?.state||'');
-  if(st==='created'||st==='opened')return '웹사이트에서 EasyCraft ID와 비밀번호로 로그인해 주세요.';
-  if(st==='microsoft_required')return 'EasyCraft 로그인 완료 · 런처 설정에서 Microsoft 계정을 한 번 연결해 주세요.';
-  if(st==='microsoft_auth')return 'Microsoft/Minecraft 연결 상태를 확인하고 있습니다…';
-  if(st==='redeemed')return '로그인 정보가 이미 런처로 전달되었습니다.';
-  return r?.message||'웹 로그인 완료를 기다리고 있습니다…';
-}
-async function pollWebLoginNow(){
-  if(!webLoginPollToken)return;
-  if(webLoginExpiresAt&&Date.now()>webLoginExpiresAt*1000){clearWebLoginPoll();$('#launcherLoginStatus').textContent='웹 로그인 시간이 만료되었습니다. 다시 시작해 주세요.';$('#launcherLoginStatus').classList.add('error');$('#webLoginWait').classList.add('hidden');return;}
-  try{
-    const r=await api.pollWebLogin(webLoginPollToken);
-    if(!r?.ok){throw new Error(r?.error||'웹 로그인 상태를 확인하지 못했습니다.');}
-    if(!r.pending&&r.account){
-      clearWebLoginPoll();state.account=r.account;renderAccount();refreshAccountTokenStatus();$('#launcherLoginStatus').textContent='로그인이 완료되었습니다.';$('#launcherLoginStatus').classList.remove('error');$('#webLoginWait').classList.add('hidden');closeModal('launcherLoginModal');toast(`${r.account?.name||r.username||'EasyCraft 계정'} 로그인 완료`);if(r.account?.serverLinked===false)toast('Minecraft 계정이 아직 연결되지 않았습니다. 설정에서 Microsoft 계정을 한 번 연결해 주세요.',true);if(r.syncWarning)toast(`Minecraft 서버 동기화는 나중에 다시 시도합니다. (${r.syncWarning})`,true);return;
-    }
-    $('#webLoginWaitTitle').textContent=r.state==='microsoft_auth'?'Microsoft 인증 대기 중':'웹 로그인 대기 중';
-    $('#webLoginWaitText').textContent=webLoginStateText(r);
-    $('#launcherLoginStatus').textContent=webLoginStateText(r);$('#launcherLoginStatus').classList.remove('error');
-    webLoginPollTimer=setTimeout(pollWebLoginNow,1600);
-  }catch(error){
-    $('#launcherLoginStatus').textContent=error?.message||String(error);$('#launcherLoginStatus').classList.add('error');
-    webLoginPollTimer=setTimeout(pollWebLoginNow,3000);
+  setLauncherLoginBusy(true);
+  toast('Microsoft/Minecraft 로그인을 시작합니다.');
+  try {
+    const r = await api.loginDirectMicrosoft();
+    if (!r?.ok || !r?.account) throw new Error(r?.error || 'Microsoft 로그인에 실패했습니다.');
+    state.account = r.account;
+    renderAccount();
+    toast(`${r.account.name || 'Microsoft 계정'} 로그인 완료`);
+  } catch (error) {
+    toast(error?.message || String(error), true);
+  } finally {
+    setLauncherLoginBusy(false);
   }
-}
-async function startWebLogin(){
-  if(state.accountLoginBusy)return;
-  setLauncherLoginBusy(true,'사이트 여는 중…');
-  $('#launcherLoginStatus').textContent='EasyCraft 로그인 사이트를 만들고 있습니다…';$('#launcherLoginStatus').classList.remove('error');
-  try{
-    const r=await api.startWebLogin();
-    if(!r?.ok)throw new Error(r?.error||'로그인 사이트를 열지 못했습니다.');
-    webLoginPollToken=r.pollToken;webLoginUrl=r.url;webLoginExpiresAt=Number(r.expiresAt||0);
-    $('#webLoginWait').classList.remove('hidden');$('#webLoginReopenBtn').classList.remove('hidden');$('#launcherLoginStatus').textContent='브라우저에서 EasyCraft 계정으로 로그인해 주세요.';
-    clearWebLoginPoll();webLoginPollTimer=setTimeout(pollWebLoginNow,800);
-  }catch(error){$('#launcherLoginStatus').textContent=error?.message||String(error);$('#launcherLoginStatus').classList.add('error')}finally{setLauncherLoginBusy(false)}
-}
-async function reopenWebLogin(){
-  if(!webLoginUrl)return startWebLogin();
-  try{await api.openExternalUrl?.(webLoginUrl)}catch{}
-  // startWebLogin opens the URL in main. If the page was closed, issuing a fresh one is safer.
-  await startWebLogin();
 }
 
 async function logout() {
@@ -339,7 +224,7 @@ async function logout() {
 
 async function launchOrStop() {
   const inst=currentInstance(); if (!inst) return toast('인스턴스를 먼저 만들어 주세요.', true);
-  if (['preparing','starting','running','stopping'].includes(state.launchState)) {
+  if (['preparing','running','stopping'].includes(state.launchState)) {
     if (state.launchState === 'stopping') return;
     state.launchState='stopping'; renderPlayButton(); showLaunchPop('Minecraft 중지 중','실행 준비와 게임 프로세스를 종료하고 있습니다.',null,true);
     const r=await api.stopGame(inst.id);
@@ -348,24 +233,23 @@ async function launchOrStop() {
     return;
   }
   if (!state.account) {
-    toast('로그인 사이트에서 EasyCraft 계정으로 로그인해 주세요. Minecraft 인증이 필요하면 같은 사이트에서 진행할 수 있습니다.', true);
+    toast('Minecraft Java Edition을 실행하려면 Microsoft 계정으로 로그인해 주세요.', true);
     return;
   }
   state.launchState='preparing'; state.activeInstanceId=inst.id; renderPlayButton(); showLaunchPop('Minecraft 준비 중',`${inst.name}을(를) 준비하고 있습니다.`,2,true);
   const r=await api.launchGame(inst.id);
   if(!r.ok){ state.launchState='idle'; renderPlayButton(); hideLaunchPop(); if(r.needLogin){state.account=null;renderAccount();} const reason=r.error||'알 수 없는 오류입니다.'; toast(reason.startsWith('Minecraft가 실행되지 않았습니다')?reason:`Minecraft가 실행되지 않았습니다: ${reason}`,true); return; }
   if(r.config){ state.config=r.config; renderHero(); renderInstances(); }
-  if(r.offlineMode) toast('EasyCraft 계정 서버에 연결할 수 없어 저장된 계정으로 Vanilla 오프라인 모드를 사용합니다.');
+  if(r.offlineMode) toast('Microsoft 인증을 갱신할 수 없어 저장된 계정으로 Vanilla 오프라인 모드를 사용합니다.');
   if(r.versionChanges?.length) toast(`자동 업데이트: ${r.versionChanges.join(' · ')}`);
 }
-function showLaunchPop(title,text,percent=null,showStop=true,mode='progress'){ const el=$('#launchPop'); el.classList.remove('hidden','success'); el.classList.toggle('success',mode==='success'); $('#launchPopTitle').textContent=title; $('#launchPopText').textContent=text||''; if(percent!==null) $('#launchProgress').style.width=`${Math.max(0,Math.min(100,percent))}%`; $('#launchPopStopBtn').classList.toggle('hidden',!showStop); }
-function hideLaunchPop(){ const el=$('#launchPop'); el.classList.add('hidden'); el.classList.remove('success'); $('#launchProgress').style.width='0%'; }
+function showLaunchPop(title,text,percent=null,showStop=true){ const el=$('#launchPop'); el.classList.remove('hidden'); $('#launchPopTitle').textContent=title; $('#launchPopText').textContent=text||''; if(percent!==null) $('#launchProgress').style.width=`${Math.max(0,Math.min(100,percent))}%`; $('#launchPopStopBtn').classList.toggle('hidden',!showStop); }
+function hideLaunchPop(){ $('#launchPop').classList.add('hidden'); $('#launchProgress').style.width='0%'; }
 function applyLaunchState(v={}) {
   state.launchState=v.state||'idle'; state.activeInstanceId=v.instanceId||state.activeInstanceId; renderPlayButton();
   if(state.launchState==='preparing') showLaunchPop('Minecraft 준비 중',v.name?`${v.name}을(를) 준비하고 있습니다.`:'필요한 파일을 확인하고 있습니다.',2,true);
-  else if(state.launchState==='starting') showLaunchPop('Minecraft 창 여는 중',v.name?`${v.name}이(가) 정상적으로 시작되는지 확인하고 있습니다.`:'게임 창이 열리는지 확인하고 있습니다.',96,true);
   else if(state.launchState==='stopping'){showLaunchPop('Minecraft 중지 중','종료 요청을 보냈습니다.',null,false);clearTimeout(applyLaunchState._stopT);applyLaunchState._stopT=setTimeout(hideLaunchPop,350);}
-  else if(state.launchState==='running'){ showLaunchPop('Minecraft가 시작되었습니다!',v.name?`${v.name}이(가) 실행 중입니다. 즐거운 플레이 되세요!`:'게임이 실행 중입니다. 즐거운 플레이 되세요!',100,false,'success'); clearTimeout(applyLaunchState._t); applyLaunchState._t=setTimeout(hideLaunchPop,3000); }
+  else if(state.launchState==='running'){ showLaunchPop('Minecraft 실행됨',v.name?`${v.name}이(가) 실행 중입니다.`:'게임이 실행 중입니다.',100,false); clearTimeout(applyLaunchState._t); applyLaunchState._t=setTimeout(hideLaunchPop,1800); }
   else { hideLaunchPop(); state.activeInstanceId=null; }
   updateLogLiveState();
 }
@@ -719,7 +603,7 @@ function logTargetInstance(){
 function updateLogLiveState(){
   const live=$('.log-live');const label=$('#logLiveState');if(!live||!label)return;
   const target=logTargetInstance();
-  const active=!!target && state.activeInstanceId===target.id && ['preparing','starting','running','stopping'].includes(state.launchState);
+  const active=!!target && state.activeInstanceId===target.id && ['preparing','running','stopping'].includes(state.launchState);
   live.classList.toggle('running',active);
   label.textContent=active?'실시간 수신 중':'저장된 로그';
 }
@@ -768,24 +652,6 @@ async function reloadLogs(){
   if(state.logInstanceId!==inst.id)return;
   if(!r?.ok){setLogLines([`로그를 불러오지 못했습니다: ${r?.error||'알 수 없는 오류'}`]);return;}
   setLogLines(r.lines||[]);
-}
-
-async function sendErrorLogsToServer(){
-  const inst=logTargetInstance();
-  const isEasyCraft=state.account?.authMode==='easycraft-account'&&!!state.account?.launcherUsername;
-  if(!isEasyCraft)return toast('EasyCraft 계정으로 로그인한 경우에만 오류 로그를 전송할 수 있습니다.',true);
-  if(!inst)return toast('로그를 보낼 인스턴스를 먼저 선택해 주세요.',true);
-  const yes=await askConfirm(`${inst.name}의 저장된 로그 전체를 EasyCraft 서버로 보낼까요?\n\nMicrosoft/Minecraft 토큰과 EasyCraft 인증값은 자동으로 가린 뒤 전송합니다.`,`오류 로그 서버로 보내기`);
-  if(!yes)return;
-  const btn=$('#sendLogsBtn');
-  btn.disabled=true;btn.textContent='로그 보내는 중…';
-  try{
-    const result=await api.sendErrorReport(inst.id);
-    if(!result?.ok)throw new Error(result?.error||'로그를 서버에 보내지 못했습니다.');
-    const suffix=result.truncated?' · 로그가 매우 커 최근 12MB만 포함됨':'';
-    toast(`오류 로그 전송 완료 · ${result.reportId}${suffix}`);
-  }catch(error){toast(error?.message||String(error),true)}
-  finally{btn.disabled=false;btn.textContent='오류 로그 서버로 보내기';}
 }
 
 function updateSettingsText(u=state.update){
@@ -858,7 +724,7 @@ function startGeneratedIntro(){
   setTimeout(()=>intro.classList.add('leaving'),2850);
   setTimeout(()=>intro.remove(),3350);
 }
-function renderSettings(){renderAccount();renderHero();renderTokenStatus();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;}
+function renderSettings(){renderAccount();renderHero();updateSettingsText(state.update);const t=$('#autoDeleteLogsToggle');if(t)t.checked=state.config.launcherSettings?.autoDeleteLogs!==false;}
 
 function syncContentHeaderFade(scrollTop=0,isContent=$('#view-content').classList.contains('active')){
   const heading=$('#pageHeading');if(!heading)return;
@@ -877,7 +743,6 @@ $('#view-settings').addEventListener('scroll',e=>syncSettingsHeading(e.currentTa
 
 // navigation
 $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
-$('#sendLogsBtn').addEventListener('click',sendErrorLogsToServer);
 $('#refreshLogsBtn').addEventListener('click',reloadLogs);
 $('#clearLogsBtn').addEventListener('click',async()=>{
   const inst=logTargetInstance();if(!inst)return toast('인스턴스를 먼저 선택해 주세요.',true);
@@ -908,7 +773,6 @@ $('#pickJavaBtn').addEventListener('click',async()=>{const r=await api.pickJava(
 $('#saveInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;if(!id)return;const r=await api.updateInstanceSettings(id,{name:$('#editName').value,version:$('#editVersion').value,loader:$('#editLoader').value,loaderVersion:$('#editLoader').value==='vanilla'?null:$('#editLoaderVersion').value,autoUpdateContent:$('#editAutoContent').checked,autoUpdateMinecraftVersion:$('#editAutoMinecraftVersion').checked,autoUpdateLoaderVersion:$('#editAutoLoaderVersion').checked,memory:{min:$('#editMinRam').value,max:$('#editMaxRam').value},screen:{width:$('#editWidth').value,height:$('#editHeight').value,fullscreen:$('#editFullscreen').checked},javaPath:$('#editJavaPath').value,jvmArgs:$('#editJvmArgs').value,gameArgs:$('#editGameArgs').value});if(!r.ok)return toast(r.error||'설정을 저장하지 못했습니다.',true);state.config=r.config;closeModal('instanceModal');await refreshCapabilities();renderAll();toast('인스턴스 설정을 저장했습니다.');});
 $('#deleteInstanceBtn').addEventListener('click',async()=>{const id=state.editingInstanceId;const inst=state.config.instances.find(i=>i.id===id);if(!inst)return;if(!(await askConfirm(`${inst.name} 인스턴스를 삭제할까요?\n모드, 월드, 리소스팩 등 이 인스턴스의 파일도 함께 삭제됩니다.`,'인스턴스 삭제')))return;const r=await api.deleteInstance(id);if(!r.ok)return toast(r.error||'삭제 실패',true);state.editingInstanceId=null;state.selectedContent.clear();state.detailItem=null;state.installedItems=[];state.searchResults=[];const boot=await api.bootstrap();state.config=boot.config||{instances:[],selectedInstanceId:null};if(boot.account!==undefined)state.account=boot.account;closeModal('instanceModal');await refreshCapabilities();renderAll();if(document.querySelector('#view-logs')?.classList.contains('active'))reloadLogs();if(document.querySelector('#view-content')?.classList.contains('active'))await renderContent();toast('인스턴스를 삭제했습니다.');});
 $('#accountPanel').addEventListener('click',login);$('#railLoginBtn').addEventListener('click',login);$('#settingsLoginBtn').addEventListener('click',login);$('#railLogoutBtn').addEventListener('click',logout);$('#settingsLogoutBtn').addEventListener('click',logout);
-$('#webLoginOpenBtn').addEventListener('click',startWebLogin);$('#webLoginReopenBtn').addEventListener('click',startWebLogin);$('#launcherLoginCancelBtn').addEventListener('click',()=>{clearWebLoginPoll();closeModal('launcherLoginModal');});
 $('#playBtn').addEventListener('click',launchOrStop);$('#launchPopStopBtn').addEventListener('click',launchOrStop);
 async function openSelectedInstanceFolder(){
   const i=currentInstance();
@@ -927,22 +791,6 @@ $('#updateAllContentBtn').addEventListener('click',async()=>{const i=currentInst
 $('#deleteAllContentBtn').addEventListener('click',async()=>{const i=currentInstance();if(!i||!state.installedItems.length)return;if(!(await askConfirm(`현재 ${contentTypeLabel()}를 모두 삭제할까요?`,'전체 삭제')))return;const btn=$('#deleteAllContentBtn');btn.disabled=true;btn.textContent='삭제 중…';const r=await api.deleteAllContent(i.id,state.contentType);btn.textContent='전체 삭제';if(!r.ok){syncBulkControls();return toast(r.error||'전체 삭제 실패',true);}state.selectedContent.clear();await refreshCapabilities();await renderContent();toast('전체 삭제가 완료되었습니다.');});
 $('#dependencyConfirmBtn').addEventListener('click',()=>closeDependencyPrompt(true));$('#dependencyCancelBtn').addEventListener('click',()=>closeDependencyPrompt(false));$('#confirmYesBtn').addEventListener('click',()=>closeConfirmPrompt(true));$('#confirmNoBtn').addEventListener('click',()=>closeConfirmPrompt(false));
 async function openReleaseNotes(){const version=state.update.availableVersion;if(!version)return toast('확인할 업데이트 버전이 없습니다.',true);const r=await api.openLauncherReleaseNotes(version);if(!r.ok)toast(r.error||'업데이트 내역을 열지 못했습니다.',true);}
-async function linkMicrosoftAccountOnThisPc(){
-  if(state.accountLinkBusy)return;
-  state.accountLinkBusy=true;renderTokenStatus();
-  const btn=$('#linkMicrosoftAccountBtn');if(btn)btn.textContent='연결 중…';
-  try{
-    const result=await api.linkMinecraftAccount();
-    if(!result?.ok)throw new Error(result?.error||'Microsoft/Minecraft 계정을 연결하지 못했습니다.');
-    if(result.account){state.account=result.account;state.account.serverLinked=true;renderAccount();}
-    state.tokenStatus=null;
-    await refreshAccountTokenStatus();
-    toast(`${result.minecraft?.name||result.account?.name||'Minecraft 계정'} 서버 연결 완료`);
-  }catch(error){toast(error?.message||String(error),true)}
-  finally{state.accountLinkBusy=false;if(btn)btn.textContent='Microsoft 계정 연결';renderTokenStatus();}
-}
-$('#refreshTokenStatusBtn').addEventListener('click',refreshAccountTokenStatus);
-$('#linkMicrosoftAccountBtn').addEventListener('click',linkMicrosoftAccountOnThisPc);
 $('#settingsReleaseNotesBtn').addEventListener('click',openReleaseNotes);
 $('#updateToastNotesBtn').addEventListener('click',openReleaseNotes);
 $('#manualUpdateCheckBtn').addEventListener('click',async()=>{await api.checkLauncherUpdate();});
@@ -953,7 +801,6 @@ $('#updateToastActionBtn').addEventListener('click',async()=>{const btn=$('#upda
 $('#termsBtn').addEventListener('click',()=>openLegalDocument('terms'));
 $('#privacyBtn').addEventListener('click',()=>openLegalDocument('privacy'));
 $('#thirdPartyBtn').addEventListener('click',()=>openLegalDocument('thirdParty'));
-$('#accountDeletionBtn').addEventListener('click',()=>openLegalDocument('accountDeletion'));
 $$('[data-legal]').forEach(btn=>btn.addEventListener('click',()=>openLegalDocument(btn.dataset.legal)));
 $('#legalCloseBtn').addEventListener('click',()=>closeModal('legalModal'));
 
@@ -967,11 +814,11 @@ $('#uninstallYesBtn').addEventListener('click',async()=>{
   $('.uninstall-warning').textContent='EasyCraft Launcher를 종료하고 삭제하고 있습니다…';
 });
 
-api.onAccountChanged(a=>{state.account=a;renderAccount();refreshAccountTokenStatus();});
+api.onAccountChanged(a=>{state.account=a;renderAccount();});
 api.onStatus(s=>{if(s?.text)toast(s.text,s?.kind==='error');});
-api.onLaunchProgress(p=>{if(state.launchState!=='stopping'&&state.launchState!=='running')showLaunchPop(state.launchState==='starting'?'Minecraft 창 여는 중':'Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
+api.onLaunchProgress(p=>{if(state.launchState!=='stopping')showLaunchPop('Minecraft 준비 중',p?.text||'준비 중…',p?.percent??null,true);});
 api.onLaunchState(applyLaunchState);
-api.onLaunchError(msg=>{state.launchState='idle';renderPlayButton();hideLaunchPop();const text=String(msg||'알 수 없는 오류입니다.');toast(text.startsWith('Minecraft가 실행되지 않았습니다')?text:`Minecraft가 실행되지 않았습니다: ${text}`,true);if(state.account?.authMode==='easycraft-account'&&state.account?.launcherUsername)setTimeout(()=>toast('로그 탭에서 오류 로그 전체를 EasyCraft 서버로 보낼 수 있습니다.'),5200);});
+api.onLaunchError(msg=>{state.launchState='idle';renderPlayButton();hideLaunchPop();const text=String(msg||'알 수 없는 오류입니다.');toast(text.startsWith('Minecraft가 실행되지 않았습니다')?text:`Minecraft가 실행되지 않았습니다: ${text}`,true);});
 api.onLaunchClosed(()=>{state.launchState='idle';renderPlayButton();hideLaunchPop();});
 api.onContentProgress(info=>{if(info?.text)toast(info.text);});
 api.onGameLog(appendLiveLog);
@@ -982,7 +829,7 @@ startGeneratedIntro();
 
 (async function init(){
   try {
-    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.27';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
+    const boot=await api.bootstrap();state.config=boot.config||state.config;state.account=boot.account||null;state.appVersion=boot.appVersion||'0.4.28';state.update=boot.updateState||state.update;state.launchState=boot.launchState?.state||'idle';state.activeInstanceId=boot.launchState?.instanceId||null;
     $('#versionFoot').textContent=`EasyCraft v${state.appVersion}`;
     renderAll();applyUpdateState(state.update);applyLaunchState(boot.launchState||{state:'idle'});
 

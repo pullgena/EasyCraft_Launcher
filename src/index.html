@@ -36,9 +36,9 @@
       <div class="rail-space"></div>
       <button class="account-orb" id="accountPanel" type="button" title="계정">
         <div class="avatar" id="accountAvatar">?</div>
-        <div class="account-hover"><strong id="accountName">로그인 필요</strong><span id="accountSub">EasyCraft 계정</span></div>
+        <div class="account-hover"><strong id="accountName">로그인 필요</strong><span id="accountSub">Microsoft 계정</span></div>
       </button>
-      <button class="rail-account-action" id="railLoginBtn" type="button">로그인</button>
+      <button class="rail-account-action" id="railLoginBtn" type="button">Microsoft 로그인</button>
       <button class="rail-account-action hidden" id="railLogoutBtn" type="button">로그아웃</button>
       <div class="version-foot" id="versionFoot">EasyCraft</div>
     </aside>
@@ -131,7 +131,7 @@
         <section class="view logs-view" id="view-logs">
           <div class="flat-head log-head">
             <div><span class="kicker">LIVE LOGS</span><h2>실시간 로그</h2><p id="logContext">선택한 인스턴스의 Minecraft 로그를 표시합니다.</p></div>
-            <div class="flat-actions"><button id="sendLogsBtn" class="hidden" type="button">오류 로그 서버로 보내기</button><button id="refreshLogsBtn">새로고침</button><button id="clearLogsBtn">로그 지우기</button></div>
+            <div class="flat-actions"><button id="refreshLogsBtn">새로고침</button><button id="clearLogsBtn">로그 지우기</button></div>
           </div>
           <div class="log-toolbar">
             <span class="log-live"><i></i><b id="logLiveState">대기 중</b></span>
@@ -146,41 +146,36 @@
           <div class="settings-stream">
             <section class="setting-row">
               <div class="setting-index">01</div>
-              <div class="setting-copy"><span>ACCOUNT</span><h3 id="settingsAccountName">로그인하지 않았습니다.</h3><p>EasyCraft 로그인은 웹사이트에서 진행합니다. Minecraft 계정은 인증 가능한 PC에서 한 번 연결하면 이후 다른 PC는 EasyCraft 서버에서 실행 인증정보를 받습니다.</p></div>
-              <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn" type="button">로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn" type="button">로그아웃</button></div>
-            </section>
-            <section class="setting-row hidden" id="tokenStatusRow">
-              <div class="setting-index">02</div>
-              <div class="setting-copy"><span>MICROSOFT TOKEN</span><h3 id="settingsTokenStatus">확인 중…</h3><p id="settingsTokenMeta">EasyCraft 계정에 저장된 Microsoft 연결 토큰의 예상 남은 기간을 표시합니다.</p></div>
-              <div class="setting-actions wrap"><button class="setting-button primary hidden" id="linkMicrosoftAccountBtn" type="button">Microsoft 계정 연결</button><button class="setting-button" id="refreshTokenStatusBtn" type="button">새로고침</button></div>
+              <div class="setting-copy"><span>MICROSOFT ACCOUNT</span><h3 id="settingsAccountName">로그인하지 않았습니다.</h3><p>Minecraft Java Edition을 실행할 Microsoft 계정으로 이 PC에서 직접 로그인합니다. EasyCraft 자체 계정 로그인 기능은 v0.4.28부터 사용하지 않습니다.</p></div>
+              <div class="setting-actions"><button class="setting-button primary" id="settingsLoginBtn" type="button">Microsoft 로그인</button><button class="setting-button danger hidden" id="settingsLogoutBtn" type="button">로그아웃</button></div>
             </section>
             <section class="setting-row">
-              <div class="setting-index">03</div>
+              <div class="setting-index">02</div>
               <div class="setting-copy"><span>INSTANCE</span><h3 id="settingsInstanceName">인스턴스 없음</h3><p>RAM, Java, 해상도, 버전과 모드 로더를 설정합니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsInstanceBtn">인스턴스 설정</button></div>
             </section>
             <section class="setting-row update-row">
-              <div class="setting-index">04</div>
+              <div class="setting-index">03</div>
               <div class="setting-copy"><span>UPDATE</span><h3 id="updateStatusTitle">업데이트 상태 확인 중</h3><p id="updateStatusText">프로그램을 시작할 때 최신 버전을 확인합니다.</p><div class="thin-progress"><span id="updateProgress"></span></div></div>
               <div class="setting-actions wrap"><button class="setting-button hidden" id="settingsReleaseNotesBtn">업데이트 내역 보기</button><button class="setting-button" id="manualUpdateCheckBtn">업데이트 확인</button><button class="setting-button primary hidden" id="settingsUpdateActionBtn">업데이트</button></div>
             </section>
             <section class="setting-row">
-              <div class="setting-index">05</div>
+              <div class="setting-index">04</div>
               <div class="setting-copy"><span>LOGS</span><h3>로그 자동 삭제</h3><p>7일이 지난 로그와 오래된 로그 파일을 자동으로 정리합니다.</p></div>
               <div class="setting-actions"><label class="switch-line setting-switch"><input type="checkbox" id="autoDeleteLogsToggle" checked /><span>자동 삭제</span></label></div>
             </section>
             <section class="setting-row">
-              <div class="setting-index">06</div>
+              <div class="setting-index">05</div>
               <div class="setting-copy"><span>FILES</span><h3>인스턴스 파일</h3><p>현재 인스턴스의 Minecraft 폴더를 엽니다.</p></div>
               <div class="setting-actions"><button class="setting-button" id="settingsOpenFolderBtn">폴더 열기</button></div>
             </section>
             <section class="setting-row">
-              <div class="setting-index">07</div>
+              <div class="setting-index">06</div>
               <div class="setting-copy"><span>LEGAL</span><h3>약관 및 개인정보</h3><p>EasyCraft 이용약관, 개인정보처리방침과 제3자 서비스 고지를 확인합니다.</p></div>
-              <div class="setting-actions wrap"><button class="setting-button" id="termsBtn" type="button">이용약관</button><button class="setting-button" id="privacyBtn" type="button">개인정보처리방침</button><button class="setting-button" id="thirdPartyBtn" type="button">제3자 고지</button><button class="setting-button" id="accountDeletionBtn" type="button">삭제 안내</button></div>
+              <div class="setting-actions wrap"><button class="setting-button" id="termsBtn" type="button">이용약관</button><button class="setting-button" id="privacyBtn" type="button">개인정보처리방침</button><button class="setting-button" id="thirdPartyBtn" type="button">제3자 고지</button></div>
             </section>
             <section class="setting-row uninstall-row">
-              <div class="setting-index">08</div>
+              <div class="setting-index">07</div>
               <div class="setting-copy"><span>UNINSTALL</span><h3>EasyCraft Launcher 삭제</h3><p>런처와 EasyCraft가 관리하는 Minecraft 데이터를 이 PC에서 제거합니다.</p></div>
               <div class="setting-actions"><button class="setting-button danger" id="uninstallEasyCraftBtn">EasyCraft 삭제</button></div>
             </section>
@@ -191,35 +186,10 @@
   </div>
 
   <div class="launch-pop hidden" id="launchPop">
-    <div class="launch-success-visual" aria-hidden="true">
-      <span class="launch-success-ring"></span>
-      <span class="launch-success-check">✓</span>
-      <i class="launch-spark spark-one"></i><i class="launch-spark spark-two"></i><i class="launch-spark spark-three"></i><i class="launch-spark spark-four"></i>
-    </div>
     <div class="launch-pop-head"><span class="pulse-dot"></span><strong id="launchPopTitle">Minecraft 준비 중</strong></div>
     <p id="launchPopText">필요한 파일을 확인하고 있습니다.</p>
     <div class="thin-progress"><span id="launchProgress"></span></div>
     <button class="btn danger small" id="launchPopStopBtn">■ 중지</button>
-  </div>
-
-
-  <div class="modal hidden" id="launcherLoginModal">
-    <div class="modal-card launcher-login-card web-login-card">
-      <div class="modal-head launcher-login-head"><div><span class="setting-label">EASYCRAFT WEB LOGIN</span><h2>웹사이트에서 로그인</h2></div><button class="close-btn" data-close="launcherLoginModal">×</button></div>
-      <section class="launcher-login-hero">
-        <div class="launcher-login-orb-wrap"><div class="launcher-login-orb">↗</div></div>
-        <div class="launcher-login-hero-copy"><strong>EasyCraft Web Account Access</strong><p>EasyCraft 계정 로그인은 브라우저에서 진행하고, Minecraft 인증은 서버 동기화 방식으로 사용합니다.</p></div>
-      </section>
-      <div class="launcher-login-panels">
-        <div class="launcher-login-panel"><span>사이트 로그인</span><strong>ID/PW는 브라우저에서 입력</strong><small>런처에는 EasyCraft 비밀번호를 입력하지 않습니다.</small></div>
-        <div class="launcher-login-panel"><span>Minecraft 동기화</span><strong>서버에서 실행 인증정보 받기</strong><small>처음 한 번만 인증 가능한 PC에서 Microsoft 계정을 연결합니다.</small></div>
-      </div>
-      <button class="web-login-open-button" id="webLoginOpenBtn" type="button"><span class="web-login-mark">E</span><span><strong>EasyCraft 로그인 사이트 열기</strong><small>로그인 완료를 런처가 자동으로 확인합니다.</small></span><i>→</i></button>
-      <div class="login-legal-links"><span>사용하기 전에</span><button type="button" data-legal="terms">이용약관</button><span>·</span><button type="button" data-legal="privacy">개인정보처리방침</button><span>을 확인해 주세요.</span></div>
-      <p class="launcher-login-status" id="launcherLoginStatus">웹사이트에서 로그인을 시작해 주세요.</p>
-      <div class="web-login-wait hidden" id="webLoginWait"><span class="web-login-spinner"></span><div><strong id="webLoginWaitTitle">로그인 대기 중</strong><small id="webLoginWaitText">브라우저에서 EasyCraft 로그인을 완료해 주세요.</small></div></div>
-      <div class="modal-actions launcher-login-actions"><button class="btn subtle" id="launcherLoginCancelBtn" type="button">닫기</button><button class="btn primary hidden" id="webLoginReopenBtn" type="button">사이트 다시 열기</button></div>
-    </div>
   </div>
 
   <div class="modal hidden" id="createModal">
